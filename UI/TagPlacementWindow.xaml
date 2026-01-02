@@ -394,6 +394,7 @@
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
                             <GroupBox
@@ -609,6 +610,42 @@
                                         Margin="4,0,0,0"
                                         Click="NormalizeViewButton_Click" />
                                 </Grid>
+                            </Grid>
+                        </GroupBox>
+
+                        <GroupBox
+                            Grid.Row="2"
+                            Header="Active Selection"
+                            Style="{StaticResource CustomGroupBoxStyle}"
+                            Padding="10"
+                            Margin="0,10,0,0"
+                            HorizontalAlignment="Stretch">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <ToggleButton
+                                    x:Name="ActiveSelectionToggleButton"
+                                    Grid.Row="0"
+                                    Content="Start Active Selection"
+                                    Style="{StaticResource CustomActionButtonStyle}"
+                                    Height="32"
+                                    FontSize="11"
+                                    Margin="0,0,0,8"
+                                    Click="ActiveSelectionToggle_Click" />
+
+                                <CheckBox
+                                    x:Name="SkipIfTaggedCheckBox"
+                                    Grid.Row="1"
+                                    Content="Skip if already tagged"
+                                    IsChecked="True"
+                                    Style="{StaticResource CustomCheckboxStyle}">
+                                    <CheckBox.LayoutTransform>
+                                        <ScaleTransform ScaleX="0.85" ScaleY="0.85" />
+                                    </CheckBox.LayoutTransform>
+                                </CheckBox>
                             </Grid>
                         </GroupBox>
                         </Grid>

@@ -5,171 +5,145 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ---
 
 # ACTIVE FEATURE IMPLEMENTATION INSTRUCTIONS
-## Retag / Normalize Existing Tags Workflow (SmartTags)
+## Interactive Active Selection Mode + Direction-Based Tag Type Overrides + ComboBox Fix
 
-You are Claude Code working in an existing Revit add-in project named **SmartTags**.
+You are Claude Code working in the SmartTags Revit add-in repository.
 
-### GOAL
-Implement a **Retag / Update existing tags** workflow so SmartTags becomes a maintenance tool, not just a placement tool.
+Follow this file exactly.
 
-Two execution modes must be supported:
-1) **Fully Automatic**
-   - Apply all adjustments immediately.
-   - Notify the user with a summary of results.
-2) **User Confirmation**
-   - Step through each proposed adjustment one-by-one.
-   - Focus the view on the affected location.
-   - Ask the user to **Accept / Reject / Cancel**.
-   - Changes are applied immediately.
-   - If rejected, that specific change must be reverted to its previous state.
-   - Cancel stops the process and reverts the current candidate only.
+### Execution mode
+Operate in DIRECT IMPLEMENTATION MODE:
+- Do not ask for confirmation before creating or modifying files.
+- Do not ask design questions unless blocked by ambiguity.
+- Implement only the active features described below.
+- Make incremental, safe changes. Ensure both target frameworks build after each feature.
+- Do not remove existing functionality unless explicitly instructed.
 
 ---
 
-### UI REQUIREMENTS
-- Add a new **card in the right column, at the bottom** of `TagPlacementWindow`.
-- Card contents:
-  - Two **mutually exclusive** checkboxes:
-    - “Fully automatic”
-    - “User confirmation”
-  - Buttons:
-    - “Retag Selected”
-    - “Normalize View”
-- Default mode: **Fully automatic** (unless user preferences say otherwise).
-- Persist the selected mode in user preferences.
+## FEATURE 1 — Active Selection Tagging Mode
+
+### Goal
+Add an “Active Selection” mode: user clicks elements in the model and SmartTags places a tag for each click.
+
+### UI requirements
+In `TagPlacementWindow` add a new card in the right column (appropriate location near other placement actions). The card must include:
+- A toggle button (or equivalent) to start/stop **Active Selection Mode**
+- A checkbox:
+  - Label: **“Skip if already tagged”**
+  - Behavior:
+    - If checked: if the clicked element already has a tag of the relevant tag category/type (see implementation notes), skip creating a new one.
+    - If unchecked: allow creating another tag even if one exists.
+
+### Behavior requirements
+- User activates Active Selection Mode from the UI.
+- While active:
+  - User can click elements in the active view.
+  - Only elements of the currently selected **target category** are allowed to be clicked.
+  - When a valid element is clicked, create a tag for it immediately using current settings:
+    - Leader toggle (enabled/disabled)
+    - Leader length setting
+    - Leader type/orientation settings already present
+    - Direction settings already present
+    - Rotation/orientation policy already implemented
+    - Collision detection engine already implemented
+  - The mode remains active after a tag is placed so the user can continue clicking.
+- Exiting:
+  - User can exit by pressing **ESC twice** (standard Revit cancel behavior).
+  - If the active view changes, or required selections become invalid (no category/tag type), the mode exits safely without crashing.
+
+### Implementation constraints
+- Do not use Revit API calls from the WPF thread.
+- All model modifications must occur in an ExternalEvent handler.
+- Selection filtering must be implemented via `ISelectionFilter` so only elements matching the chosen category are selectable.
+- The mode must not spam modal dialogs while active.
+- Provide clear UI feedback (e.g., toggle state, label, or status text).
+
+### “Already tagged” detection (skip option)
+Implement a reasonable, performant “already tagged” check:
+- Must run in Revit API context (ExternalEvent).
+- Must check for existing tags in the active view that reference the element.
+- Keep it conservative and safe: if unsure, treat as “tag exists” only when clearly confirmed.
 
 ---
 
-### FUNCTIONAL REQUIREMENTS
+## FEATURE 2 — Direction-Based Tag Type Override (Left / Right / Up / Down)
 
-#### A) Retag Selected
-- Use the current element selection in the active view.
-- Find all **SmartTags-managed tags** that reference those elements.
-- For each tag:
-  - Compute a new optimal placement using current SmartTags settings:
-    - Placement direction
-    - Leader settings
-    - Rotation / orientation policy
-    - Collision detection engine
-  - If the computed placement is unchanged within tolerance → skip.
-- Execution:
-  - **Fully automatic**
-    - Apply all changes in a single transaction.
-    - Show summary: adjusted / unchanged / skipped / failed.
-  - **User confirmation**
-    - For each proposed adjustment:
-      - Focus the view to the tag location.
-      - Prompt: *Apply this adjustment?*  
-        `[Accept] [Reject] [Cancel]`
-      - Accept → keep change
-      - Reject → revert that tag to its previous state
-      - Cancel → stop; revert current candidate only
+### Goal
+Add configuration so SmartTags can automatically choose different tag types depending on placement direction, based on a tag *type name mapping*.
 
-#### B) Normalize View
-- Collect **all SmartTags-managed tags in the active view**.
-- Run the same logic as Retag Selected.
-- Support both execution modes.
+This feature is intended for tag families that contain multiple types like:
+- “Device Tag - Left”
+- “Device Tag - Right”
+- “Device Tag - Up”
+- “Device Tag - Down”
 
----
+### UI requirements (below Tag Direction selection)
+Add:
+1) A TextBox + Check button above the direction ComboBoxes:
+- Label: **“Direction keyword source”** (or similar)
+- TextBox: user enters a keyword/mapping token (e.g., `Left`, `Right`, `Up`, `Down` usage rules)
+- Button: **“Check”**
+  - On click, verify that direction variants exist for the selected category/tag family types and report the result to the user (non-intrusive message area or dialog, but do not break flow).
 
-### SMARTTAGS MARKER (MANDATORY)
-- SmartTags must reliably identify tags it manages.
-- Use **Extensible Storage on the tag element**.
-- Do **not** modify tag families or require shared parameters.
-- Stored metadata must include:
-  - Schema GUID
-  - Plugin name + version
-  - Creation timestamp
-  - Referenced element id (if available)
-  - `managed = true`
-- All new tags placed by SmartTags must write this marker.
-- Existing tags without this marker are considered unmanaged and skipped.
+2) Four labeled ComboBoxes:
+- Label + ComboBox rows:
+  - **Left tag**  [ComboBox]
+  - **Right tag** [ComboBox]
+  - **Up tag**    [ComboBox]
+  - **Down tag**  [ComboBox]
 
----
+### Population & filtering requirements
+- The ComboBoxes must populate based on the **currently selected category** and the available compatible tag types.
+- When the user provides a keyword/token in the TextBox and presses **Check**:
+  - The system must attempt to resolve candidate tag types for each direction **based on type names**.
+  - The direction ComboBoxes should be **filtered** to show only the types that match the expected direction naming rule.
+  - If no matches exist for a direction, show it clearly in the Check result (e.g., “Right: no matching tag type found”).
 
-### ARCHITECTURE CONSTRAINTS
-- Follow **Command → ExternalEvent → Service** separation strictly.
-- No Revit API calls from WPF/UI thread.
-- All model changes must occur in ExternalEvent handlers.
-- Confirmation workflow must use an **ExternalEvent-driven state machine**.
-- UI dialogs must be parented to Revit’s main window using existing Win32 helpers.
-- Respect existing Material Design theming and window patterns.
+### Selection & application requirements
+- When placing a tag:
+  - If direction is Left/Right/Up/Down and a matching override type is selected (or resolved), use that tag type.
+  - Otherwise fall back to the default tag type currently selected.
+- This direction override must apply consistently in:
+  - Tag All
+  - Tag Selected
+  - Active Selection Mode (Feature 1)
+  - Any other tag placement workflows that already exist
+
+### Rules (explicit)
+- The override source is the **Tag Type Name** (not a parameter on the tag).
+- Do not hardcode family names.
+- Centralize the resolution logic in a service so it’s not duplicated across handlers.
 
 ---
 
-### IMPLEMENTATION ORDER (MANDATORY)
+## FEATURE 3 — Fix ComboBox selection bug
 
-1) **Data model**
-- Create `TagAdjustmentProposal`:
-  - TagId
-  - ReferencedElementId
-  - OldStateSnapshot
-  - NewStateProposal
-  - Reason / notes
-- Create `TagStateSnapshot` capturing everything needed to revert:
-  - TagHeadPosition
-  - Leader state that is modified
-  - Rotation/orientation that is modified
-  - Any parameters that are modified
+### Problem statement
+Currently, existing ComboBoxes do not reliably apply a selection when the user clicks an entry with the mouse, but selection works when scrolling with the mouse wheel.
 
-2) **Extensible Storage**
-- Implement `SmartTagMarkerStorage`:
-  - EnsureSchema()
-  - SetManagedTag()
-  - IsManagedTag()
-  - TryGetMetadata()
-- Integrate marker writing into existing tag placement workflows.
+### Goal
+Fix ComboBoxes in `TagPlacementWindow` so:
+- Mouse click selection updates the underlying bound properties immediately.
+- Keyboard navigation works.
+- Mouse wheel behavior continues to work.
 
-3) **Tag discovery**
-- Implement service method:
-  - `FindTagsReferencingElements(Document doc, View view, ICollection<ElementId> elementIds)`
-- Filter:
-  - Active view only
-  - Managed tags only
-- Handle Revit 2024 / 2026 API differences using `#if`.
-
-4) **Adjustment computation**
-- Compute proposed placements **without modifying the model**.
-- Reuse the existing collision detection engine.
-- Skip unchanged placements using tolerance (~0.5 mm).
-
-5) **Automatic application**
-- ExternalEvent handler:
-  - `RetagApplyHandler`
-- One transaction per operation:
-  - “SmartTags: Retag”
-  - “SmartTags: Normalize View”
-- Apply all proposals, collect results, return summary to UI.
-
-6) **Confirmation workflow**
-- Implement `RetagConfirmationController` (UI-level coordinator).
-- Use two ExternalEvent handlers:
-  - `ApplySingleProposalHandler`
-  - `RevertSingleProposalHandler`
-- Flow:
-  - Apply proposal → focus view → ask user
-  - Reject → revert snapshot
-  - Cancel → revert current and stop
-- Never leave the model in an unknown or partial state.
-
-7) **UI + Preferences**
-- Add card to bottom-right of `TagPlacementWindow`.
-- Enforce checkbox exclusivity in code.
-- Persist selected execution mode in preferences.
-
-8) **Safety & Edge Cases**
-- Handle deleted tags or elements gracefully.
-- Skip invalid references.
-- Avoid infinite loops.
-- Cache obstacles per run where possible.
+### Constraints
+- Claude must investigate the cause and fix it without rewriting the whole architecture.
+- The fix must be consistent across all relevant ComboBoxes in the window (including new ones added in Feature 2).
 
 ---
 
-### CODING RULES
-- Keep methods small and readable.
+## Global constraints (must follow)
+- Command → ExternalEvent → Service separation is mandatory.
+- No Revit API calls from UI thread.
+- All model changes must occur inside ExternalEvent handlers.
+- Preserve multi-targeting:
+  - Revit 2024: net48
+  - Revit 2026: net8.0-windows
+- Use `#if` where Revit API differences exist.
 - Do not remove existing functionality.
-- Preserve multi-targeting for Revit 2024 / 2026.
-- Use explicit `System.Windows.Visibility.Visible/Hidden` if applicable.
+- Keep code readable and small-method oriented.
 - No emojis in code or comments.
 
 ---

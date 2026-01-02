@@ -42,8 +42,11 @@ namespace SmartTags.UI
         private readonly ExternalEvent _tagPlacementExternalEvent;
         private readonly RetagApplyHandler _retagApplyHandler;
         private readonly ExternalEvent _retagApplyExternalEvent;
+        private readonly ActiveSelectionTagHandler _activeSelectionHandler;
+        private readonly ExternalEvent _activeSelectionExternalEvent;
         private bool _isUpdatingPlacementDirection;
         private bool _isUpdatingRetagMode;
+        private bool _isActiveSelectionModeActive;
 
         public ObservableCollection<TagCategoryOption> TagCategories { get; } = new ObservableCollection<TagCategoryOption>();
         public ObservableCollection<TagTypeOption> TagTypes { get; } = new ObservableCollection<TagTypeOption>();
@@ -69,6 +72,9 @@ namespace SmartTags.UI
 
             _retagApplyHandler = new RetagApplyHandler();
             _retagApplyExternalEvent = ExternalEvent.Create(_retagApplyHandler);
+
+            _activeSelectionHandler = new ActiveSelectionTagHandler();
+            _activeSelectionExternalEvent = ExternalEvent.Create(_activeSelectionHandler);
 
             LoadThemeState();
             LoadWindowState();
@@ -1378,6 +1384,227 @@ namespace SmartTags.UI
             }
             catch (Exception)
             {
+            }
+        }
+
+        private void ActiveSelectionToggle_Click(object sender, RoutedEventArgs e)
+        {
+            if (ActiveSelectionToggleButton == null)
+            {
+                return;
+            }
+
+            if (_isActiveSelectionModeActive)
+            {
+                _isActiveSelectionModeActive = false;
+                ActiveSelectionToggleButton.Content = "Start Active Selection";
+                return;
+            }
+
+            if (!ValidateTagSettings())
+            {
+                if (ActiveSelectionToggleButton != null)
+                {
+                    ActiveSelectionToggleButton.IsChecked = false;
+                }
+                return;
+            }
+
+            _isActiveSelectionModeActive = true;
+            ActiveSelectionToggleButton.Content = "Stop Active Selection";
+
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                RunActiveSelectionLoop();
+            });
+        }
+
+        private bool ValidateTagSettings()
+        {
+            if (_uiApplication?.ActiveUIDocument == null)
+            {
+                MessageBox.Show("Open a document before using Active Selection.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                return false;
+            }
+
+            var uiDoc = _uiApplication.ActiveUIDocument;
+            var doc = uiDoc.Document;
+
+            var categoryOption = CategoryComboBox?.SelectedItem as TagCategoryOption;
+            if (categoryOption == null)
+            {
+                MessageBox.Show("Select a category to tag.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                return false;
+            }
+
+            if (categoryOption.ElementCategoryId == ElementId.InvalidElementId)
+            {
+                MessageBox.Show("No matching element category found for this tag.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                return false;
+            }
+
+            var tagTypeOption = TagTypeComboBox?.SelectedItem as TagTypeOption;
+            if (tagTypeOption == null)
+            {
+                MessageBox.Show("Select a tag type.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                return false;
+            }
+
+            return true;
+        }
+
+        private void RunActiveSelectionLoop()
+        {
+            while (_isActiveSelectionModeActive)
+            {
+                try
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        if (!_isActiveSelectionModeActive)
+                        {
+                            return;
+                        }
+
+                        var uiDoc = _uiApplication?.ActiveUIDocument;
+                        if (uiDoc == null)
+                        {
+                            _isActiveSelectionModeActive = false;
+                            UpdateActiveSelectionButton();
+                            return;
+                        }
+
+                        var doc = uiDoc.Document;
+                        var view = doc.ActiveView;
+                        if (view == null)
+                        {
+                            _isActiveSelectionModeActive = false;
+                            UpdateActiveSelectionButton();
+                            return;
+                        }
+
+                        var categoryOption = CategoryComboBox?.SelectedItem as TagCategoryOption;
+                        if (categoryOption == null || categoryOption.ElementCategoryId == ElementId.InvalidElementId)
+                        {
+                            _isActiveSelectionModeActive = false;
+                            UpdateActiveSelectionButton();
+                            return;
+                        }
+
+                        ElementId selectedElementId = null;
+
+                        try
+                        {
+                            var filter = new Services.CategorySelectionFilter(categoryOption.ElementCategoryId);
+                            var reference = uiDoc.Selection.PickObject(
+                                Autodesk.Revit.UI.Selection.ObjectType.Element,
+                                filter,
+                                "Click an element to tag (ESC twice to exit)");
+
+                            if (reference != null)
+                            {
+                                selectedElementId = reference.ElementId;
+                            }
+                        }
+                        catch (Autodesk.Revit.Exceptions.OperationCanceledException)
+                        {
+                            _isActiveSelectionModeActive = false;
+                            UpdateActiveSelectionButton();
+                            return;
+                        }
+                        catch
+                        {
+                            _isActiveSelectionModeActive = false;
+                            UpdateActiveSelectionButton();
+                            return;
+                        }
+
+                        if (selectedElementId == null || selectedElementId == ElementId.InvalidElementId)
+                        {
+                            return;
+                        }
+
+                        ConfigureActiveSelectionHandler(selectedElementId, categoryOption);
+
+                        _activeSelectionExternalEvent.Raise();
+
+                        System.Threading.Thread.Sleep(300);
+
+                        while (_activeSelectionExternalEvent.IsPending)
+                        {
+                            System.Threading.Thread.Sleep(50);
+                        }
+                    });
+                }
+                catch
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        _isActiveSelectionModeActive = false;
+                        UpdateActiveSelectionButton();
+                    });
+                    break;
+                }
+            }
+        }
+
+        private void UpdateActiveSelectionButton()
+        {
+            if (ActiveSelectionToggleButton != null)
+            {
+                ActiveSelectionToggleButton.Content = "Start Active Selection";
+                ActiveSelectionToggleButton.IsChecked = false;
+            }
+        }
+
+        private void ConfigureActiveSelectionHandler(ElementId elementId, TagCategoryOption categoryOption)
+        {
+            var tagTypeOption = TagTypeComboBox?.SelectedItem as TagTypeOption;
+            if (tagTypeOption == null)
+            {
+                return;
+            }
+
+            _activeSelectionHandler.ElementToTag = elementId;
+            _activeSelectionHandler.CategoryId = categoryOption.ElementCategoryId;
+            _activeSelectionHandler.TagTypeId = tagTypeOption.TypeId;
+            _activeSelectionHandler.TagCategoryId = categoryOption.TagCategoryId;
+            _activeSelectionHandler.HasLeader = LeaderLineCheckBox?.IsChecked == true;
+            _activeSelectionHandler.Direction = GetPlacementDirection();
+            _activeSelectionHandler.DetectElementRotation = DetectRotationCheckBox?.IsChecked == true;
+            _activeSelectionHandler.SkipIfAlreadyTagged = SkipIfTaggedCheckBox?.IsChecked == true;
+
+            var orientationOption = OrientationComboBox?.SelectedItem as OrientationOption;
+            _activeSelectionHandler.Orientation = orientationOption != null ? orientationOption.Orientation : TagOrientation.Horizontal;
+
+            TryParseAngle(AngleTextBox?.Text, out var angleRadians, out var _);
+            _activeSelectionHandler.Angle = angleRadians;
+
+            var hasLeader = LeaderLineCheckBox?.IsChecked == true;
+            if (hasLeader)
+            {
+                if (TryParseLength(LeaderLengthTextBox?.Text, out var leaderLength, out var _))
+                {
+                    var leaderType = LeaderTypeComboBox?.SelectedItem as LeaderTypeOption;
+                    var applyToAttached = leaderType == null || leaderType.IsAttachedEnd;
+                    _activeSelectionHandler.AttachedLength = applyToAttached ? leaderLength : 0;
+                    _activeSelectionHandler.FreeLength = applyToAttached ? 0 : leaderLength;
+                }
+            }
+
+            _activeSelectionHandler.EnableCollisionDetection = CollisionDetectionCheckBox?.IsChecked == true;
+
+            if (_activeSelectionHandler.EnableCollisionDetection)
+            {
+                if (TryParseCollisionGap(CollisionGapTextBox?.Text, out var gapMm, out var _))
+                {
+                    _activeSelectionHandler.CollisionGapMillimeters = gapMm;
+                }
+            }
+
+            if (TryParseLength(MinimumOffsetTextBox?.Text, out var minimumOffsetMm, out var _))
+            {
+                _activeSelectionHandler.MinimumOffsetMillimeters = minimumOffsetMm;
             }
         }
 
