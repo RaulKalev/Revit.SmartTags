@@ -1,5 +1,6 @@
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using SmartTags.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -19,6 +20,9 @@ namespace SmartTags.ExternalEvents
         public bool DetectElementRotation { get; set; }
         public bool UseSelection { get; set; }
         public IList<ElementId> TargetElementIds { get; set; }
+        public bool EnableCollisionDetection { get; set; }
+        public double CollisionGapMillimeters { get; set; } = 1.0;
+        public double MinimumOffsetMillimeters { get; set; } = 300.0;
 
         public void Execute(UIApplication app)
         {
@@ -71,7 +75,16 @@ namespace SmartTags.ExternalEvents
                 var attachedLength = AttachedLength * scaleFactor;
                 var freeLength = FreeLength * scaleFactor;
 
+                // Initialize collision detector if enabled
+                TagCollisionDetector collisionDetector = null;
+                if (EnableCollisionDetection)
+                {
+                    collisionDetector = new TagCollisionDetector(view, CollisionGapMillimeters);
+                    collisionDetector.CollectObstacles(doc);
+                }
+
                 int taggedCount = 0;
+                int collisionCount = 0;
                 foreach (var element in elements)
                 {
                     if (!TryGetAnchorPoint(element, view, out var anchor))
@@ -88,17 +101,45 @@ namespace SmartTags.ExternalEvents
                     var offsetDirection = RotateVectorAroundAxis(directionVector, viewAxis, totalAngle);
                     var head = anchor;
                     var leaderOffset = Math.Max(0, attachedLength + freeLength);
+
                     if (HasLeader && leaderOffset > 0)
                     {
+                        // Leader enabled with length specified
                         head = anchor + offsetDirection.Multiply(leaderOffset);
+                    }
+                    else if (!HasLeader)
+                    {
+                        // Leader not enabled - apply minimum offset to avoid placing on host element
+                        // Convert from millimeters to feet (Revit internal units)
+                        var minimumOffset = MinimumOffsetMillimeters / 304.8; // mm to feet
+                        head = anchor + offsetDirection.Multiply(minimumOffset);
                     }
                     else if (freeLength > 0)
                     {
+                        // Leader enabled but length is 0 - use free length if available
                         head = anchor + offsetDirection.Multiply(freeLength);
                     }
 
+                    // Adjust position for collision detection if enabled
+                    if (collisionDetector != null)
+                    {
+                        bool foundValidPosition;
+                        head = collisionDetector.FindValidPosition(anchor, head, out foundValidPosition);
+
+                        if (!foundValidPosition)
+                        {
+                            collisionCount++;
+                        }
+                    }
+
                     var reference = new Reference(element);
-                    var tag = CreateTag(doc, view, reference, head, Orientation, HasLeader);
+
+                    // When leader is disabled, Revit places tag at element location regardless of head position
+                    // Solution: Create tag WITH leader, position it, then disable leader
+                    bool shouldDisableLeaderAfterCreation = !HasLeader;
+                    bool createWithLeader = HasLeader || shouldDisableLeaderAfterCreation;
+
+                    var tag = CreateTag(doc, view, reference, head, Orientation, createWithLeader);
                     if (tag == null)
                     {
                         continue;
@@ -107,6 +148,12 @@ namespace SmartTags.ExternalEvents
                     try
                     {
                         tag.TagHeadPosition = head;
+
+                        // Disable leader after positioning if it wasn't originally enabled
+                        if (shouldDisableLeaderAfterCreation)
+                        {
+                            tag.HasLeader = false;
+                        }
                     }
                     catch
                     {
@@ -135,6 +182,56 @@ namespace SmartTags.ExternalEvents
                         }
                     }
 
+                    // Post-creation validation: Check collision with actual tag bounds
+                    if (collisionDetector != null && tag != null)
+                    {
+                        // Regenerate to ensure bounds are updated
+                        doc.Regenerate();
+
+                        // Check if tag's actual bounds collide with obstacles
+                        if (collisionDetector.HasCollisionWithActualBounds(tag, out var actualBounds))
+                        {
+                            // Find new position using actual tag size
+                            bool foundValidPosition;
+                            var newHead = collisionDetector.FindValidPositionWithActualSize(anchor, head, actualBounds, out foundValidPosition);
+
+                            if (foundValidPosition && (newHead - head).GetLength() > 1e-6)
+                            {
+                                try
+                                {
+                                    // Reposition tag to collision-free location
+                                    tag.TagHeadPosition = newHead;
+
+                                    // Re-apply rotation at new position if needed
+                                    if (Math.Abs(totalAngle) > 1e-9)
+                                    {
+                                        var newAxis = Line.CreateBound(newHead, newHead + viewDirection);
+                                        ElementTransformUtils.RotateElement(doc, tag.Id, newAxis, totalAngle);
+                                    }
+
+                                    // Update head for tracking
+                                    head = newHead;
+
+                                    // Regenerate again after repositioning
+                                    doc.Regenerate();
+                                }
+                                catch
+                                {
+                                    // If repositioning fails, keep original position
+                                    collisionCount++;
+                                }
+                            }
+                            else if (!foundValidPosition)
+                            {
+                                // No valid position found even with actual size
+                                collisionCount++;
+                            }
+                        }
+
+                        // Add tag with actual bounds to collision detector for subsequent tags
+                        collisionDetector.AddNewTag(tag);
+                    }
+
                     taggedCount++;
                 }
 
@@ -146,7 +243,12 @@ namespace SmartTags.ExternalEvents
                 }
                 else
                 {
-                    TaskDialog.Show("SmartTags", $"Tagged {taggedCount} element(s).");
+                    var message = $"Tagged {taggedCount} element(s).";
+                    if (collisionCount > 0)
+                    {
+                        message += $"\n\nWarning: {collisionCount} tag(s) could not avoid collisions.";
+                    }
+                    TaskDialog.Show("SmartTags", message);
                 }
             }
         }

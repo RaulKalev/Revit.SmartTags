@@ -28,6 +28,9 @@ namespace SmartTags.UI
         private const string LeaderLengthKey = "TagPlacementWindow.LeaderLength";
         private const string AngleKey = "TagPlacementWindow.Angle";
         private const string PlacementDirectionKey = "TagPlacementWindow.PlacementDirection";
+        private const string CollisionDetectionEnabledKey = "TagPlacementWindow.CollisionDetectionEnabled";
+        private const string CollisionGapKey = "TagPlacementWindow.CollisionGap";
+        private const string MinimumOffsetKey = "TagPlacementWindow.MinimumOffset";
 
         private readonly UIApplication _uiApplication;
         private readonly WindowResizer _windowResizer;
@@ -64,6 +67,7 @@ namespace SmartTags.UI
             LoadWindowState();
             LoadLeaderSettings();
             LoadPlacementDirection();
+            LoadCollisionSettings();
 
             InitializeLeaderOptions();
             InitializeOrientationOptions();
@@ -323,6 +327,27 @@ namespace SmartTags.UI
             _tagPlacementHandler.FreeLength = freeLength;
             _tagPlacementHandler.Orientation = orientation;
             _tagPlacementHandler.Angle = angleRadians;
+
+            // Configure collision detection
+            _tagPlacementHandler.EnableCollisionDetection = CollisionDetectionCheckBox?.IsChecked == true;
+
+            if (_tagPlacementHandler.EnableCollisionDetection)
+            {
+                if (!TryParseCollisionGap(CollisionGapTextBox?.Text, out var gapMm, out var gapError))
+                {
+                    MessageBox.Show(gapError, "SmartTags", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return false;
+                }
+                _tagPlacementHandler.CollisionGapMillimeters = gapMm;
+            }
+
+            // Configure minimum offset (when leader is disabled)
+            if (!TryParseLength(MinimumOffsetTextBox?.Text, out var minimumOffsetMm, out var offsetError))
+            {
+                MessageBox.Show(offsetError, "SmartTags", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+            _tagPlacementHandler.MinimumOffsetMillimeters = minimumOffsetMm;
 
             if (useSelection)
             {
@@ -659,6 +684,7 @@ namespace SmartTags.UI
             SaveSelectedCategory();
             SaveLeaderSettings();
             SavePlacementDirection();
+            SaveCollisionSettings();
             SaveWindowState();
         }
 
@@ -894,6 +920,96 @@ namespace SmartTags.UI
             {
                 var config = LoadConfig();
                 config[SelectedCategoryKey] = GetElementIdValue(option.TagCategoryId);
+                SaveConfig(config);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private void CollisionDetectionCheckBox_Toggled(object sender, RoutedEventArgs e)
+        {
+            if (CollisionGapTextBox != null)
+            {
+                var enabled = CollisionDetectionCheckBox?.IsChecked == true;
+                CollisionGapTextBox.IsEnabled = enabled;
+                CollisionGapTextBox.Opacity = enabled ? 1.0 : 0.5;
+            }
+        }
+
+        private bool TryParseCollisionGap(string text, out double gapMm, out string error)
+        {
+            gapMm = 1.0;
+            error = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return true;
+            }
+
+            if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out gapMm))
+            {
+                error = $"Invalid gap value: {text}";
+                return false;
+            }
+
+            if (gapMm < 0 || gapMm > 1000)
+            {
+                error = "Gap must be between 0 and 1000mm.";
+                return false;
+            }
+
+            return true;
+        }
+
+        private void LoadCollisionSettings()
+        {
+            if (CollisionDetectionCheckBox == null || CollisionGapTextBox == null || MinimumOffsetTextBox == null)
+            {
+                return;
+            }
+
+            var config = LoadConfig();
+
+            if (TryGetBool(config, CollisionDetectionEnabledKey, out var enabled))
+            {
+                CollisionDetectionCheckBox.IsChecked = enabled;
+            }
+
+            if (TryGetString(config, CollisionGapKey, out var gap))
+            {
+                CollisionGapTextBox.Text = string.IsNullOrWhiteSpace(gap) ? "1" : gap;
+            }
+            else
+            {
+                CollisionGapTextBox.Text = "1";
+            }
+
+            if (TryGetString(config, MinimumOffsetKey, out var offset))
+            {
+                MinimumOffsetTextBox.Text = string.IsNullOrWhiteSpace(offset) ? "300" : offset;
+            }
+            else
+            {
+                MinimumOffsetTextBox.Text = "300";
+            }
+
+            CollisionDetectionCheckBox_Toggled(null, null);
+        }
+
+        private void SaveCollisionSettings()
+        {
+            if (CollisionDetectionCheckBox == null || CollisionGapTextBox == null || MinimumOffsetTextBox == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var config = LoadConfig();
+                config[CollisionDetectionEnabledKey] = CollisionDetectionCheckBox.IsChecked == true;
+                config[CollisionGapKey] = string.IsNullOrWhiteSpace(CollisionGapTextBox.Text) ? "1" : CollisionGapTextBox.Text.Trim();
+                config[MinimumOffsetKey] = string.IsNullOrWhiteSpace(MinimumOffsetTextBox.Text) ? "300" : MinimumOffsetTextBox.Text.Trim();
                 SaveConfig(config);
             }
             catch (Exception)
