@@ -31,6 +31,7 @@ namespace SmartTags.UI
         private const string CollisionDetectionEnabledKey = "TagPlacementWindow.CollisionDetectionEnabled";
         private const string CollisionGapKey = "TagPlacementWindow.CollisionGap";
         private const string MinimumOffsetKey = "TagPlacementWindow.MinimumOffset";
+        private const string RetagExecutionModeKey = "TagPlacementWindow.RetagExecutionMode";
 
         private readonly UIApplication _uiApplication;
         private readonly WindowResizer _windowResizer;
@@ -39,7 +40,10 @@ namespace SmartTags.UI
         private ResourceDictionary _currentThemeDictionary;
         private readonly TagPlacementHandler _tagPlacementHandler;
         private readonly ExternalEvent _tagPlacementExternalEvent;
+        private readonly RetagApplyHandler _retagApplyHandler;
+        private readonly ExternalEvent _retagApplyExternalEvent;
         private bool _isUpdatingPlacementDirection;
+        private bool _isUpdatingRetagMode;
 
         public ObservableCollection<TagCategoryOption> TagCategories { get; } = new ObservableCollection<TagCategoryOption>();
         public ObservableCollection<TagTypeOption> TagTypes { get; } = new ObservableCollection<TagTypeOption>();
@@ -63,11 +67,15 @@ namespace SmartTags.UI
             _tagPlacementHandler = new TagPlacementHandler();
             _tagPlacementExternalEvent = ExternalEvent.Create(_tagPlacementHandler);
 
+            _retagApplyHandler = new RetagApplyHandler();
+            _retagApplyExternalEvent = ExternalEvent.Create(_retagApplyHandler);
+
             LoadThemeState();
             LoadWindowState();
             LoadLeaderSettings();
             LoadPlacementDirection();
             LoadCollisionSettings();
+            LoadRetagExecutionMode();
 
             InitializeLeaderOptions();
             InitializeOrientationOptions();
@@ -685,6 +693,7 @@ namespace SmartTags.UI
             SaveLeaderSettings();
             SavePlacementDirection();
             SaveCollisionSettings();
+            SaveRetagExecutionMode();
             SaveWindowState();
         }
 
@@ -1140,6 +1149,236 @@ namespace SmartTags.UI
             }
 
             return false;
+        }
+
+        private void RetagExecutionMode_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_isUpdatingRetagMode)
+            {
+                return;
+            }
+
+            _isUpdatingRetagMode = true;
+
+            var checkbox = sender as CheckBox;
+            if (checkbox == null || checkbox.IsChecked != true)
+            {
+                _isUpdatingRetagMode = false;
+                return;
+            }
+
+            if (checkbox == RetagFullyAutomaticCheckBox)
+            {
+                if (RetagUserConfirmationCheckBox != null)
+                {
+                    RetagUserConfirmationCheckBox.IsChecked = false;
+                }
+            }
+            else if (checkbox == RetagUserConfirmationCheckBox)
+            {
+                if (RetagFullyAutomaticCheckBox != null)
+                {
+                    RetagFullyAutomaticCheckBox.IsChecked = false;
+                }
+            }
+
+            _isUpdatingRetagMode = false;
+        }
+
+        private void RetagSelectedButton_Click(object sender, RoutedEventArgs e)
+        {
+            ExecuteRetag(true);
+        }
+
+        private void NormalizeViewButton_Click(object sender, RoutedEventArgs e)
+        {
+            ExecuteRetag(false);
+        }
+
+        private void ExecuteRetag(bool useSelection)
+        {
+            if (_uiApplication?.ActiveUIDocument == null)
+            {
+                MessageBox.Show("Open a document before retagging.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var uiDoc = _uiApplication.ActiveUIDocument;
+            var doc = uiDoc.Document;
+            var view = doc.ActiveView;
+
+            if (view == null)
+            {
+                MessageBox.Show("No active view.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var adjustmentService = new Services.TagAdjustmentService
+            {
+                Direction = GetPlacementDirection(),
+                DetectElementRotation = DetectRotationCheckBox?.IsChecked == true,
+                HasLeader = LeaderLineCheckBox?.IsChecked == true,
+                Orientation = (OrientationComboBox?.SelectedItem as OrientationOption)?.Orientation ?? TagOrientation.Horizontal,
+                EnableCollisionDetection = CollisionDetectionCheckBox?.IsChecked == true
+            };
+
+            if (!TryParseAngle(AngleTextBox?.Text, out var angleRadians, out var angleError))
+            {
+                MessageBox.Show(angleError, "SmartTags", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            adjustmentService.Angle = angleRadians;
+
+            var hasLeader = LeaderLineCheckBox?.IsChecked == true;
+            if (hasLeader)
+            {
+                if (!TryParseLength(LeaderLengthTextBox?.Text, out var leaderLength, out var lengthError))
+                {
+                    MessageBox.Show(lengthError, "SmartTags", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                var leaderType = LeaderTypeComboBox?.SelectedItem as LeaderTypeOption;
+                var applyToAttached = leaderType == null || leaderType.IsAttachedEnd;
+                adjustmentService.AttachedLength = applyToAttached ? leaderLength : 0;
+                adjustmentService.FreeLength = applyToAttached ? 0 : leaderLength;
+            }
+
+            if (adjustmentService.EnableCollisionDetection)
+            {
+                if (!TryParseCollisionGap(CollisionGapTextBox?.Text, out var gapMm, out var gapError))
+                {
+                    MessageBox.Show(gapError, "SmartTags", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                adjustmentService.CollisionGapMillimeters = gapMm;
+            }
+
+            if (!TryParseLength(MinimumOffsetTextBox?.Text, out var minimumOffsetMm, out var offsetError))
+            {
+                MessageBox.Show(offsetError, "SmartTags", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            adjustmentService.MinimumOffsetMillimeters = minimumOffsetMm;
+
+            if (useSelection)
+            {
+                var selectionIds = uiDoc.Selection.GetElementIds();
+                if (selectionIds == null || selectionIds.Count == 0)
+                {
+                    MessageBox.Show("Select elements in the active view to retag.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                _retagApplyHandler.UseSelection = true;
+                _retagApplyHandler.TargetElementIds = selectionIds.ToList();
+            }
+            else
+            {
+                _retagApplyHandler.UseSelection = false;
+                _retagApplyHandler.TargetElementIds = null;
+            }
+
+            _retagApplyHandler.AdjustmentService = adjustmentService;
+
+            var isFullyAutomatic = RetagFullyAutomaticCheckBox?.IsChecked == true;
+
+            if (isFullyAutomatic)
+            {
+                _retagApplyExternalEvent.Raise();
+
+                System.Threading.Tasks.Task.Run(() =>
+                {
+                    System.Threading.Thread.Sleep(500);
+                    Dispatcher.Invoke(() =>
+                    {
+                        var result = _retagApplyHandler.LastResult;
+                        if (result != null)
+                        {
+                            TaskDialog.Show("SmartTags", result.GetSummaryMessage());
+                        }
+                    });
+                });
+            }
+            else
+            {
+                System.Threading.Tasks.Task.Run(() =>
+                {
+                    var tags = useSelection
+                        ? Services.TagDiscoveryService.FindTagsReferencingElements(doc, view, _retagApplyHandler.TargetElementIds)
+                        : Services.TagDiscoveryService.FindAllManagedTagsInView(doc, view);
+
+                    if (tags == null || tags.Count == 0)
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            MessageBox.Show("No SmartTags-managed tags found.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                        });
+                        return;
+                    }
+
+                    var proposals = adjustmentService.ComputeAdjustments(doc, view, tags);
+                    if (proposals == null || proposals.Count == 0)
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            MessageBox.Show("No adjustments needed. All tags are already optimally placed.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                        });
+                        return;
+                    }
+
+                    Dispatcher.Invoke(() =>
+                    {
+                        var controller = new Services.RetagConfirmationController(_uiApplication);
+                        var operationMode = useSelection ? "Retag Selected" : "Normalize View";
+                        var result = controller.RunConfirmationWorkflow(proposals, operationMode);
+
+                        if (result != null)
+                        {
+                            TaskDialog.Show("SmartTags", result.GetSummaryMessage());
+                        }
+                    });
+                });
+            }
+        }
+
+        private void LoadRetagExecutionMode()
+        {
+            if (RetagFullyAutomaticCheckBox == null || RetagUserConfirmationCheckBox == null)
+            {
+                return;
+            }
+
+            var config = LoadConfig();
+            bool isFullyAutomatic = true;
+
+            if (TryGetBool(config, RetagExecutionModeKey, out var value))
+            {
+                isFullyAutomatic = value;
+            }
+
+            _isUpdatingRetagMode = true;
+            RetagFullyAutomaticCheckBox.IsChecked = isFullyAutomatic;
+            RetagUserConfirmationCheckBox.IsChecked = !isFullyAutomatic;
+            _isUpdatingRetagMode = false;
+        }
+
+        private void SaveRetagExecutionMode()
+        {
+            if (RetagFullyAutomaticCheckBox == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var config = LoadConfig();
+                config[RetagExecutionModeKey] = RetagFullyAutomaticCheckBox.IsChecked == true;
+                SaveConfig(config);
+            }
+            catch (Exception)
+            {
+            }
         }
 
         public sealed class TagCategoryOption

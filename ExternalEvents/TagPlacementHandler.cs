@@ -182,6 +182,19 @@ namespace SmartTags.ExternalEvents
                         }
                     }
 
+                    // Mark tag as managed by SmartTags
+                    if (tag != null)
+                    {
+                        try
+                        {
+                            SmartTagMarkerStorage.SetManagedTag(tag, element.Id);
+                        }
+                        catch
+                        {
+                            // Continue even if marker storage fails
+                        }
+                    }
+
                     // Post-creation validation: Check collision with actual tag bounds
                     if (collisionDetector != null && tag != null)
                     {

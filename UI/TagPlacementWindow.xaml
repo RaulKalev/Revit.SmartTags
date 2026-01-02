@@ -390,13 +390,20 @@
                             </GroupBox>
                         </Grid>
 
-                        <GroupBox
-                            Grid.Column="1"
-                            Header="Placement Direction"
-                            Style="{StaticResource CustomGroupBoxStyle}"
-                            Padding="10"
-                            HorizontalAlignment="Stretch">
-                            <StackPanel>
+                        <Grid Grid.Column="1">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <GroupBox
+                                Grid.Row="0"
+                                Header="Placement Direction"
+                                Style="{StaticResource CustomGroupBoxStyle}"
+                                Padding="10"
+                                Margin="0,0,0,10"
+                                HorizontalAlignment="Stretch">
+                                <StackPanel>
                                 <Grid>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
@@ -533,6 +540,78 @@
                                 </CheckBox>
                             </StackPanel>
                         </GroupBox>
+
+                        <GroupBox
+                            Grid.Row="1"
+                            Header="Retag / Normalize"
+                            Style="{StaticResource CustomGroupBoxStyle}"
+                            Padding="10"
+                            HorizontalAlignment="Stretch">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock
+                                    Grid.Row="0"
+                                    Text="Execution mode"
+                                    Style="{StaticResource CustomTextBlock}"
+                                    FontSize="11"
+                                    Margin="0,0,0,6" />
+
+                                <StackPanel Grid.Row="1" Margin="0,0,0,10">
+                                    <CheckBox
+                                        x:Name="RetagFullyAutomaticCheckBox"
+                                        Content="Fully automatic"
+                                        IsChecked="True"
+                                        Style="{StaticResource CustomCheckboxStyle}"
+                                        Checked="RetagExecutionMode_Changed"
+                                        Margin="0,0,0,4">
+                                        <CheckBox.LayoutTransform>
+                                            <ScaleTransform ScaleX="0.85" ScaleY="0.85" />
+                                        </CheckBox.LayoutTransform>
+                                    </CheckBox>
+                                    <CheckBox
+                                        x:Name="RetagUserConfirmationCheckBox"
+                                        Content="User confirmation"
+                                        IsChecked="False"
+                                        Style="{StaticResource CustomCheckboxStyle}"
+                                        Checked="RetagExecutionMode_Changed">
+                                        <CheckBox.LayoutTransform>
+                                            <ScaleTransform ScaleX="0.85" ScaleY="0.85" />
+                                        </CheckBox.LayoutTransform>
+                                    </CheckBox>
+                                </StackPanel>
+
+                                <Grid Grid.Row="2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Button
+                                        Grid.Column="0"
+                                        Content="Retag Selected"
+                                        Style="{StaticResource CustomActionButtonStyle}"
+                                        Height="30"
+                                        FontSize="11"
+                                        Margin="0,0,4,0"
+                                        Click="RetagSelectedButton_Click" />
+
+                                    <Button
+                                        Grid.Column="1"
+                                        Content="Normalize View"
+                                        Style="{StaticResource CustomActionButtonStyle}"
+                                        Height="30"
+                                        FontSize="11"
+                                        Margin="4,0,0,0"
+                                        Click="NormalizeViewButton_Click" />
+                                </Grid>
+                            </Grid>
+                        </GroupBox>
+                        </Grid>
                     </Grid>
 
                     <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
