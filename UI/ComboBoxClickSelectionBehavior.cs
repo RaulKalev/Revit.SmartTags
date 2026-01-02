@@ -29,18 +29,18 @@ namespace SmartTags.UI
             {
                 if (e.NewValue is bool enabled && enabled)
                 {
-                    item.PreviewMouseLeftButtonUp += OnItemPreviewMouseLeftButtonUp;
+                    item.PreviewMouseLeftButtonDown += OnItemPreviewMouseLeftButtonDown;
                 }
                 else
                 {
-                    item.PreviewMouseLeftButtonUp -= OnItemPreviewMouseLeftButtonUp;
+                    item.PreviewMouseLeftButtonDown -= OnItemPreviewMouseLeftButtonDown;
                 }
             }
         }
 
-        private static void OnItemPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        private static void OnItemPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (sender is ComboBoxItem item)
+            if (sender is ComboBoxItem item && item.IsEnabled)
             {
                 var comboBox = ItemsControl.ItemsControlFromItemContainer(item) as ComboBox;
                 if (comboBox == null)
@@ -48,12 +48,10 @@ namespace SmartTags.UI
                     return;
                 }
 
-                if (!item.IsSelected)
-                {
-                    comboBox.SelectedItem = item.DataContext;
-                }
-
+                comboBox.SelectedItem = item.DataContext;
                 comboBox.IsDropDownOpen = false;
+
+                item.Focus();
                 e.Handled = true;
             }
         }
