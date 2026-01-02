@@ -124,6 +124,7 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
                             <GroupBox
                                 Grid.Row="0"
@@ -191,6 +192,120 @@
 
                             <GroupBox
                                 Grid.Row="1"
+                                Header="Direction Tag Override"
+                                Style="{StaticResource CustomGroupBoxStyle}"
+                                Padding="10"
+                                Margin="0,0,0,10"
+                                HorizontalAlignment="Stretch">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="90" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock
+                                        Grid.Row="0"
+                                        Grid.Column="0"
+                                        Text="Keyword"
+                                        Style="{StaticResource CustomTextBlock}"
+                                        VerticalAlignment="Center"
+                                        Margin="0,0,10,8" />
+                                    <TextBox
+                                        x:Name="DirectionKeywordTextBox"
+                                        Grid.Row="0"
+                                        Grid.Column="1"
+                                        Style="{StaticResource CustomTextBoxStyle}"
+                                        Text=""
+                                        materialDesign:HintAssist.Hint="e.g. Tag"
+                                        Margin="0,0,4,8" />
+                                    <Button
+                                        x:Name="DirectionCheckButton"
+                                        Grid.Row="0"
+                                        Grid.Column="2"
+                                        Content="Check"
+                                        Style="{StaticResource CustomActionButtonStyle}"
+                                        Height="26"
+                                        Width="50"
+                                        FontSize="10"
+                                        Margin="0,0,0,8"
+                                        Click="DirectionCheckButton_Click" />
+
+                                    <TextBlock
+                                        Grid.Row="1"
+                                        Grid.Column="0"
+                                        Text="Left tag"
+                                        Style="{StaticResource CustomTextBlock}"
+                                        Margin="0,0,10,8" />
+                                    <ComboBox
+                                        x:Name="LeftTagTypeComboBox"
+                                        Grid.Row="1"
+                                        Grid.Column="1"
+                                        Grid.ColumnSpan="2"
+                                        Style="{StaticResource DarkThemeComboBox}"
+                                        ItemsSource="{Binding LeftTagTypes}"
+                                        DisplayMemberPath="DisplayName"
+                                        Margin="0,0,0,8" />
+
+                                    <TextBlock
+                                        Grid.Row="2"
+                                        Grid.Column="0"
+                                        Text="Right tag"
+                                        Style="{StaticResource CustomTextBlock}"
+                                        Margin="0,0,10,8" />
+                                    <ComboBox
+                                        x:Name="RightTagTypeComboBox"
+                                        Grid.Row="2"
+                                        Grid.Column="1"
+                                        Grid.ColumnSpan="2"
+                                        Style="{StaticResource DarkThemeComboBox}"
+                                        ItemsSource="{Binding RightTagTypes}"
+                                        DisplayMemberPath="DisplayName"
+                                        Margin="0,0,0,8" />
+
+                                    <TextBlock
+                                        Grid.Row="3"
+                                        Grid.Column="0"
+                                        Text="Up tag"
+                                        Style="{StaticResource CustomTextBlock}"
+                                        Margin="0,0,10,8" />
+                                    <ComboBox
+                                        x:Name="UpTagTypeComboBox"
+                                        Grid.Row="3"
+                                        Grid.Column="1"
+                                        Grid.ColumnSpan="2"
+                                        Style="{StaticResource DarkThemeComboBox}"
+                                        ItemsSource="{Binding UpTagTypes}"
+                                        DisplayMemberPath="DisplayName"
+                                        Margin="0,0,0,8" />
+
+                                    <TextBlock
+                                        Grid.Row="4"
+                                        Grid.Column="0"
+                                        Text="Down tag"
+                                        Style="{StaticResource CustomTextBlock}"
+                                        Margin="0,0,10,0" />
+                                    <ComboBox
+                                        x:Name="DownTagTypeComboBox"
+                                        Grid.Row="4"
+                                        Grid.Column="1"
+                                        Grid.ColumnSpan="2"
+                                        Style="{StaticResource DarkThemeComboBox}"
+                                        ItemsSource="{Binding DownTagTypes}"
+                                        DisplayMemberPath="DisplayName" />
+                                </Grid>
+                            </GroupBox>
+
+                            <GroupBox
+                                Grid.Row="2"
                                 Header="Leader"
                                 Style="{StaticResource CustomGroupBoxStyle}"
                                 Padding="10"
@@ -258,7 +373,7 @@
                             </GroupBox>
 
                             <GroupBox
-                                Grid.Row="2"
+                                Grid.Row="3"
                                 Header="Orientation"
                                 Style="{StaticResource CustomGroupBoxStyle}"
                                 Padding="10"
@@ -319,7 +434,7 @@
                             </GroupBox>
 
                             <GroupBox
-                                Grid.Row="3"
+                                Grid.Row="4"
                                 Header="Collision Detection"
                                 Style="{StaticResource CustomGroupBoxStyle}"
                                 Padding="10"

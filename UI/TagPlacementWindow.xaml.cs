@@ -50,6 +50,10 @@ namespace SmartTags.UI
 
         public ObservableCollection<TagCategoryOption> TagCategories { get; } = new ObservableCollection<TagCategoryOption>();
         public ObservableCollection<TagTypeOption> TagTypes { get; } = new ObservableCollection<TagTypeOption>();
+        public ObservableCollection<TagTypeOption> LeftTagTypes { get; } = new ObservableCollection<TagTypeOption>();
+        public ObservableCollection<TagTypeOption> RightTagTypes { get; } = new ObservableCollection<TagTypeOption>();
+        public ObservableCollection<TagTypeOption> UpTagTypes { get; } = new ObservableCollection<TagTypeOption>();
+        public ObservableCollection<TagTypeOption> DownTagTypes { get; } = new ObservableCollection<TagTypeOption>();
         public ObservableCollection<LeaderTypeOption> LeaderTypes { get; } = new ObservableCollection<LeaderTypeOption>();
         public ObservableCollection<OrientationOption> OrientationOptions { get; } = new ObservableCollection<OrientationOption>();
 
@@ -401,6 +405,8 @@ namespace SmartTags.UI
                 _tagPlacementHandler.UseSelection = false;
                 _tagPlacementHandler.TargetElementIds = null;
             }
+
+            _tagPlacementHandler.DirectionResolver = GetDirectionResolver();
 
             return true;
         }
@@ -1606,6 +1612,123 @@ namespace SmartTags.UI
             {
                 _activeSelectionHandler.MinimumOffsetMillimeters = minimumOffsetMm;
             }
+
+            _activeSelectionHandler.DirectionResolver = GetDirectionResolver();
+        }
+
+        private void DirectionCheckButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_uiApplication?.ActiveUIDocument == null)
+            {
+                MessageBox.Show("Open a document before checking direction tag types.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var doc = _uiApplication.ActiveUIDocument.Document;
+            var categoryOption = CategoryComboBox?.SelectedItem as TagCategoryOption;
+            if (categoryOption == null || categoryOption.TagCategoryId == ElementId.InvalidElementId)
+            {
+                MessageBox.Show("Select a tag category first.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var keyword = DirectionKeywordTextBox?.Text ?? string.Empty;
+
+            var checkResult = Services.DirectionTagTypeResolver.CheckDirectionTagTypes(
+                doc,
+                categoryOption.TagCategoryId,
+                keyword);
+
+            if (!checkResult.Success)
+            {
+                MessageBox.Show(checkResult.ErrorMessage, "SmartTags", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            PopulateDirectionTagTypes(categoryOption.TagCategoryId, checkResult);
+
+            MessageBox.Show(checkResult.GetSummary(), "Direction Check Results", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        private void PopulateDirectionTagTypes(ElementId tagCategoryId, Services.DirectionCheckResult checkResult)
+        {
+            LeftTagTypes.Clear();
+            RightTagTypes.Clear();
+            UpTagTypes.Clear();
+            DownTagTypes.Clear();
+
+            if (!_tagTypesByCategory.TryGetValue(tagCategoryId, out var allTagTypes))
+            {
+                return;
+            }
+
+            foreach (var tagType in allTagTypes)
+            {
+                LeftTagTypes.Add(tagType);
+                RightTagTypes.Add(tagType);
+                UpTagTypes.Add(tagType);
+                DownTagTypes.Add(tagType);
+            }
+
+            if (checkResult.LeftMatch != null && checkResult.LeftMatch.Found)
+            {
+                var match = LeftTagTypes.FirstOrDefault(t => t.TypeId == checkResult.LeftMatch.TypeId);
+                if (match != null)
+                {
+                    LeftTagTypeComboBox.SelectedItem = match;
+                }
+            }
+
+            if (checkResult.RightMatch != null && checkResult.RightMatch.Found)
+            {
+                var match = RightTagTypes.FirstOrDefault(t => t.TypeId == checkResult.RightMatch.TypeId);
+                if (match != null)
+                {
+                    RightTagTypeComboBox.SelectedItem = match;
+                }
+            }
+
+            if (checkResult.UpMatch != null && checkResult.UpMatch.Found)
+            {
+                var match = UpTagTypes.FirstOrDefault(t => t.TypeId == checkResult.UpMatch.TypeId);
+                if (match != null)
+                {
+                    UpTagTypeComboBox.SelectedItem = match;
+                }
+            }
+
+            if (checkResult.DownMatch != null && checkResult.DownMatch.Found)
+            {
+                var match = DownTagTypes.FirstOrDefault(t => t.TypeId == checkResult.DownMatch.TypeId);
+                if (match != null)
+                {
+                    DownTagTypeComboBox.SelectedItem = match;
+                }
+            }
+        }
+
+        private Services.DirectionTagTypeResolver GetDirectionResolver()
+        {
+            var resolver = new Services.DirectionTagTypeResolver();
+
+            resolver.DirectionKeyword = DirectionKeywordTextBox?.Text ?? string.Empty;
+
+            var leftOption = LeftTagTypeComboBox?.SelectedItem as TagTypeOption;
+            resolver.LeftTagTypeId = leftOption?.TypeId ?? ElementId.InvalidElementId;
+
+            var rightOption = RightTagTypeComboBox?.SelectedItem as TagTypeOption;
+            resolver.RightTagTypeId = rightOption?.TypeId ?? ElementId.InvalidElementId;
+
+            var upOption = UpTagTypeComboBox?.SelectedItem as TagTypeOption;
+            resolver.UpTagTypeId = upOption?.TypeId ?? ElementId.InvalidElementId;
+
+            var downOption = DownTagTypeComboBox?.SelectedItem as TagTypeOption;
+            resolver.DownTagTypeId = downOption?.TypeId ?? ElementId.InvalidElementId;
+
+            var defaultOption = TagTypeComboBox?.SelectedItem as TagTypeOption;
+            resolver.DefaultTagTypeId = defaultOption?.TypeId ?? ElementId.InvalidElementId;
+
+            return resolver;
         }
 
         public sealed class TagCategoryOption

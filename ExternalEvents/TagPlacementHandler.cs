@@ -11,6 +11,7 @@ namespace SmartTags.ExternalEvents
     {
         public ElementId CategoryId { get; set; } = ElementId.InvalidElementId;
         public ElementId TagTypeId { get; set; } = ElementId.InvalidElementId;
+        public DirectionTagTypeResolver DirectionResolver { get; set; }
         public bool HasLeader { get; set; }
         public double AttachedLength { get; set; }
         public double FreeLength { get; set; }
@@ -39,7 +40,13 @@ namespace SmartTags.ExternalEvents
                 return;
             }
 
-            var tagSymbol = doc.GetElement(TagTypeId) as FamilySymbol;
+            ElementId resolvedTagTypeId = TagTypeId;
+            if (DirectionResolver != null)
+            {
+                resolvedTagTypeId = DirectionResolver.ResolveTagTypeForDirection(Direction);
+            }
+
+            var tagSymbol = doc.GetElement(resolvedTagTypeId) as FamilySymbol;
             var transactionName = UseSelection ? "SmartTags: Tag Selected" : "SmartTags: Tag All";
             using (var t = new Transaction(doc, transactionName))
             {
@@ -159,11 +166,11 @@ namespace SmartTags.ExternalEvents
                     {
                     }
 
-                    if (TagTypeId != ElementId.InvalidElementId && tag.GetTypeId() != TagTypeId)
+                    if (resolvedTagTypeId != ElementId.InvalidElementId && tag.GetTypeId() != resolvedTagTypeId)
                     {
                         try
                         {
-                            tag.ChangeTypeId(TagTypeId);
+                            tag.ChangeTypeId(resolvedTagTypeId);
                         }
                         catch
                         {
