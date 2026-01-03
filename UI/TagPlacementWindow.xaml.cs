@@ -32,6 +32,7 @@ namespace SmartTags.UI
         private const string CollisionGapKey = "TagPlacementWindow.CollisionGap";
         private const string MinimumOffsetKey = "TagPlacementWindow.MinimumOffset";
         private const string RetagExecutionModeKey = "TagPlacementWindow.RetagExecutionMode";
+        private const string DirectionKeywordKey = "TagPlacementWindow.DirectionKeyword";
 
         private readonly UIApplication _uiApplication;
         private readonly WindowResizer _windowResizer;
@@ -92,6 +93,7 @@ namespace SmartTags.UI
             LoadPlacementDirection();
             LoadCollisionSettings();
             LoadRetagExecutionMode();
+            LoadDirectionKeyword();
 
             InitializeLeaderOptions();
             InitializeOrientationOptions();
@@ -1381,6 +1383,43 @@ namespace SmartTags.UI
             catch (Exception)
             {
             }
+        }
+
+        private void LoadDirectionKeyword()
+        {
+            if (DirectionKeywordTextBox == null)
+            {
+                return;
+            }
+
+            var config = LoadConfig();
+            if (TryGetString(config, DirectionKeywordKey, out var keyword))
+            {
+                DirectionKeywordTextBox.Text = keyword;
+            }
+        }
+
+        private void SaveDirectionKeyword()
+        {
+            if (DirectionKeywordTextBox == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var config = LoadConfig();
+                config[DirectionKeywordKey] = DirectionKeywordTextBox.Text ?? string.Empty;
+                SaveConfig(config);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private void DirectionKeywordTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            SaveDirectionKeyword();
         }
 
         private void ActiveSelectionToggle_Click(object sender, RoutedEventArgs e)

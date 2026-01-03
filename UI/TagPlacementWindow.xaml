@@ -225,7 +225,10 @@
                                         Grid.Column="1"
                                         Style="{StaticResource CustomTextBoxStyle}"
                                         Text=""
+                                        Width="150"
+                                        HorizontalAlignment="Left"
                                         materialDesign:HintAssist.Hint="e.g. Tag"
+                                        TextChanged="DirectionKeywordTextBox_TextChanged"
                                         Margin="0,0,4,8" />
                                     <Button
                                         x:Name="DirectionCheckButton"
