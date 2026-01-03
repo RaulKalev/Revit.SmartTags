@@ -237,6 +237,10 @@ namespace SmartTags.ExternalEvents
                                         var normalizedDirection = offsetDirection.Normalize();
                                         var vectorToNewHead = newHead - anchor;
                                         var projectionLength = vectorToNewHead.DotProduct(normalizedDirection);
+
+                                        // Ensure projection maintains safe minimum distance from element
+                                        projectionLength = Math.Max(Math.Abs(projectionLength), safeMinimumOffset) * Math.Sign(projectionLength);
+
                                         newHead = anchor + normalizedDirection.Multiply(projectionLength);
                                     }
 
