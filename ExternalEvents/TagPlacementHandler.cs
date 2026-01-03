@@ -131,6 +131,16 @@ namespace SmartTags.ExternalEvents
                     var head = anchor;
                     var leaderOffset = Math.Max(0, attachedLength + freeLength);
 
+                    // Calculate safe minimum distance based on element size
+                    var elementBounds = element.get_BoundingBox(view);
+                    var elementRadius = 0.5; // Default 0.5 feet if no bounds
+                    if (elementBounds != null)
+                    {
+                        var size = (elementBounds.Max - elementBounds.Min).GetLength();
+                        elementRadius = size / 2.0;
+                    }
+                    var safeMinimumOffset = Math.Max(elementRadius + 0.5, MinimumOffsetMillimeters / 304.8);
+
                     if (HasLeader && leaderOffset > 0)
                     {
                         // Leader enabled with length specified
@@ -138,10 +148,8 @@ namespace SmartTags.ExternalEvents
                     }
                     else if (!HasLeader)
                     {
-                        // Leader not enabled - apply minimum offset to avoid placing on host element
-                        // Convert from millimeters to feet (Revit internal units)
-                        var minimumOffset = MinimumOffsetMillimeters / 304.8; // mm to feet
-                        head = anchor + offsetDirection.Multiply(minimumOffset);
+                        // Leader not enabled - apply safe offset based on element size
+                        head = anchor + offsetDirection.Multiply(safeMinimumOffset);
                     }
                     else if (freeLength > 0)
                     {
@@ -237,10 +245,9 @@ namespace SmartTags.ExternalEvents
                         if (collisionDetector.HasCollisionWithActualBounds(tag, out var actualBounds))
                         {
                             // Find new position using actual tag size
-                            // Enforce minimum distance from anchor to prevent tags on host elements
-                            var minDistance = MinimumOffsetMillimeters / 304.8; // Convert mm to feet
+                            // Enforce safe minimum distance based on element size to prevent tags on host elements
                             bool foundValidPosition;
-                            var newHead = collisionDetector.FindValidPositionWithActualSize(anchor, head, actualBounds, out foundValidPosition, minDistance);
+                            var newHead = collisionDetector.FindValidPositionWithActualSize(anchor, head, actualBounds, out foundValidPosition, safeMinimumOffset);
 
                             if (foundValidPosition && (newHead - head).GetLength() > 1e-6)
                             {
