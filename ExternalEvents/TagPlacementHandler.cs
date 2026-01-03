@@ -207,18 +207,6 @@ namespace SmartTags.ExternalEvents
                         rotationAngle = totalAngle;
                     }
 
-                    if (Math.Abs(rotationAngle) > 1e-9)
-                    {
-                        try
-                        {
-                            var axis = Line.CreateBound(head, head + viewDirection);
-                            ElementTransformUtils.RotateElement(doc, tag.Id, axis, rotationAngle);
-                        }
-                        catch
-                        {
-                        }
-                    }
-
                     // Mark tag as managed by SmartTags
                     if (tag != null)
                     {
@@ -252,13 +240,6 @@ namespace SmartTags.ExternalEvents
                                     // Reposition tag to collision-free location
                                     tag.TagHeadPosition = newHead;
 
-                                    // Re-apply rotation at new position if needed
-                                    if (Math.Abs(rotationAngle) > 1e-9)
-                                    {
-                                        var newAxis = Line.CreateBound(newHead, newHead + viewDirection);
-                                        ElementTransformUtils.RotateElement(doc, tag.Id, newAxis, rotationAngle);
-                                    }
-
                                     // Update head for tracking
                                     head = newHead;
 
@@ -280,6 +261,19 @@ namespace SmartTags.ExternalEvents
 
                         // Add tag with actual bounds to collision detector for subsequent tags
                         collisionDetector.AddNewTag(tag);
+                    }
+
+                    // Apply rotation once, after all positioning is complete
+                    if (Math.Abs(rotationAngle) > 1e-9)
+                    {
+                        try
+                        {
+                            var axis = Line.CreateBound(head, head + viewDirection);
+                            ElementTransformUtils.RotateElement(doc, tag.Id, axis, rotationAngle);
+                        }
+                        catch
+                        {
+                        }
                     }
 
                     taggedCount++;

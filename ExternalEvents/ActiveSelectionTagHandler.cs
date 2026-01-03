@@ -204,18 +204,6 @@ namespace SmartTags.ExternalEvents
                         rotationAngle = totalAngle;
                     }
 
-                    if (Math.Abs(rotationAngle) > 1e-9)
-                    {
-                        try
-                        {
-                            var axis = Line.CreateBound(head, head + viewDirection);
-                            ElementTransformUtils.RotateElement(doc, tag.Id, axis, rotationAngle);
-                        }
-                        catch
-                        {
-                        }
-                    }
-
                     if (collisionDetector != null && tag != null)
                     {
                         doc.Regenerate();
@@ -231,12 +219,6 @@ namespace SmartTags.ExternalEvents
                                 {
                                     tag.TagHeadPosition = newHead;
 
-                                    if (Math.Abs(rotationAngle) > 1e-9)
-                                    {
-                                        var newAxis = Line.CreateBound(newHead, newHead + viewDirection);
-                                        ElementTransformUtils.RotateElement(doc, tag.Id, newAxis, rotationAngle);
-                                    }
-
                                     head = newHead;
                                     doc.Regenerate();
                                 }
@@ -247,6 +229,19 @@ namespace SmartTags.ExternalEvents
                         }
 
                         collisionDetector.AddNewTag(tag);
+                    }
+
+                    // Apply rotation once, after all positioning is complete
+                    if (Math.Abs(rotationAngle) > 1e-9)
+                    {
+                        try
+                        {
+                            var axis = Line.CreateBound(head, head + viewDirection);
+                            ElementTransformUtils.RotateElement(doc, tag.Id, axis, rotationAngle);
+                        }
+                        catch
+                        {
+                        }
                     }
 
                     SmartTagMarkerStorage.SetManagedTag(tag, element.Id);
