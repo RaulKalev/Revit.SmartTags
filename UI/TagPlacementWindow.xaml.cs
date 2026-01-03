@@ -1450,10 +1450,15 @@ namespace SmartTags.UI
             {
                 try
                 {
+                    ElementId selectedElementId = null;
+                    TagCategoryOption categoryOption = null;
+                    bool shouldContinue = true;
+
                     Dispatcher.Invoke(() =>
                     {
                         if (!_isActiveSelectionModeActive)
                         {
+                            shouldContinue = false;
                             return;
                         }
 
@@ -1462,6 +1467,7 @@ namespace SmartTags.UI
                         {
                             _isActiveSelectionModeActive = false;
                             UpdateActiveSelectionButton();
+                            shouldContinue = false;
                             return;
                         }
 
@@ -1471,18 +1477,18 @@ namespace SmartTags.UI
                         {
                             _isActiveSelectionModeActive = false;
                             UpdateActiveSelectionButton();
+                            shouldContinue = false;
                             return;
                         }
 
-                        var categoryOption = CategoryComboBox?.SelectedItem as TagCategoryOption;
+                        categoryOption = CategoryComboBox?.SelectedItem as TagCategoryOption;
                         if (categoryOption == null || categoryOption.ElementCategoryId == ElementId.InvalidElementId)
                         {
                             _isActiveSelectionModeActive = false;
                             UpdateActiveSelectionButton();
+                            shouldContinue = false;
                             return;
                         }
-
-                        ElementId selectedElementId = null;
 
                         try
                         {
@@ -1501,31 +1507,38 @@ namespace SmartTags.UI
                         {
                             _isActiveSelectionModeActive = false;
                             UpdateActiveSelectionButton();
+                            shouldContinue = false;
                             return;
                         }
                         catch
                         {
                             _isActiveSelectionModeActive = false;
                             UpdateActiveSelectionButton();
+                            shouldContinue = false;
                             return;
                         }
 
                         if (selectedElementId == null || selectedElementId == ElementId.InvalidElementId)
                         {
+                            shouldContinue = false;
                             return;
                         }
 
                         ConfigureActiveSelectionHandler(selectedElementId, categoryOption);
-
                         _activeSelectionExternalEvent.Raise();
-
-                        System.Threading.Thread.Sleep(300);
-
-                        while (_activeSelectionExternalEvent.IsPending)
-                        {
-                            System.Threading.Thread.Sleep(50);
-                        }
                     });
+
+                    if (!shouldContinue)
+                    {
+                        continue;
+                    }
+
+                    System.Threading.Thread.Sleep(300);
+
+                    while (_activeSelectionExternalEvent.IsPending)
+                    {
+                        System.Threading.Thread.Sleep(50);
+                    }
                 }
                 catch
                 {
