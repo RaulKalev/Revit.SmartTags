@@ -192,14 +192,7 @@ namespace SmartTags.ExternalEvents
                     }
 
                     double rotationAngle = 0;
-                    if (usingDirectionOverride)
-                    {
-                        if (DetectElementRotation && TryGetElementRotationAngle(element, view, out var elemRotation))
-                        {
-                            rotationAngle = elemRotation;
-                        }
-                    }
-                    else
+                    if (!usingDirectionOverride)
                     {
                         rotationAngle = totalAngle;
                     }
