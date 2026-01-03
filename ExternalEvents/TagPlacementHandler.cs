@@ -41,9 +41,11 @@ namespace SmartTags.ExternalEvents
             }
 
             ElementId resolvedTagTypeId = TagTypeId;
+            bool usingDirectionOverride = false;
             if (DirectionResolver != null)
             {
                 resolvedTagTypeId = DirectionResolver.ResolveTagTypeForDirection(Direction);
+                usingDirectionOverride = true;
             }
 
             var tagSymbol = doc.GetElement(resolvedTagTypeId) as FamilySymbol;
@@ -177,7 +179,7 @@ namespace SmartTags.ExternalEvents
                         }
                     }
 
-                    if (Math.Abs(totalAngle) > 1e-9)
+                    if (!usingDirectionOverride && Math.Abs(totalAngle) > 1e-9)
                     {
                         try
                         {
@@ -223,7 +225,7 @@ namespace SmartTags.ExternalEvents
                                     tag.TagHeadPosition = newHead;
 
                                     // Re-apply rotation at new position if needed
-                                    if (Math.Abs(totalAngle) > 1e-9)
+                                    if (!usingDirectionOverride && Math.Abs(totalAngle) > 1e-9)
                                     {
                                         var newAxis = Line.CreateBound(newHead, newHead + viewDirection);
                                         ElementTransformUtils.RotateElement(doc, tag.Id, newAxis, totalAngle);
