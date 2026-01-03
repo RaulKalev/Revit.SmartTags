@@ -184,12 +184,25 @@ namespace SmartTags.ExternalEvents
                         }
                     }
 
-                    if (!usingDirectionOverride && Math.Abs(totalAngle) > 1e-9)
+                    double rotationAngle = 0;
+                    if (usingDirectionOverride)
+                    {
+                        if (DetectElementRotation && TryGetElementRotationAngle(element, view, out var elemRotation))
+                        {
+                            rotationAngle = elemRotation;
+                        }
+                    }
+                    else
+                    {
+                        rotationAngle = totalAngle;
+                    }
+
+                    if (Math.Abs(rotationAngle) > 1e-9)
                     {
                         try
                         {
                             var axis = Line.CreateBound(head, head + viewDirection);
-                            ElementTransformUtils.RotateElement(doc, tag.Id, axis, totalAngle);
+                            ElementTransformUtils.RotateElement(doc, tag.Id, axis, rotationAngle);
                         }
                         catch
                         {
@@ -211,10 +224,10 @@ namespace SmartTags.ExternalEvents
                                 {
                                     tag.TagHeadPosition = newHead;
 
-                                    if (!usingDirectionOverride && Math.Abs(totalAngle) > 1e-9)
+                                    if (Math.Abs(rotationAngle) > 1e-9)
                                     {
                                         var newAxis = Line.CreateBound(newHead, newHead + viewDirection);
-                                        ElementTransformUtils.RotateElement(doc, tag.Id, newAxis, totalAngle);
+                                        ElementTransformUtils.RotateElement(doc, tag.Id, newAxis, rotationAngle);
                                     }
 
                                     head = newHead;
