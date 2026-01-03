@@ -99,6 +99,7 @@ namespace SmartTags.UI
             InitializeOrientationOptions();
             LoadTagOptions(app.ActiveUIDocument?.Document);
             UpdateLeaderInputs();
+            AutoApplyDirectionTagTypes();
         }
 
         private void InitializeLeaderOptions()
@@ -1414,6 +1415,43 @@ namespace SmartTags.UI
             }
             catch (Exception)
             {
+            }
+        }
+
+        private void AutoApplyDirectionTagTypes()
+        {
+            if (_uiApplication?.ActiveUIDocument?.Document == null)
+            {
+                return;
+            }
+
+            var categoryOption = CategoryComboBox?.SelectedItem as TagCategoryOption;
+            if (categoryOption == null || categoryOption.TagCategoryId == ElementId.InvalidElementId)
+            {
+                return;
+            }
+
+            var keyword = DirectionKeywordTextBox?.Text ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(keyword))
+            {
+                return;
+            }
+
+            try
+            {
+                var checkResult = Services.DirectionTagTypeResolver.CheckDirectionTagTypes(
+                    _uiApplication.ActiveUIDocument.Document,
+                    categoryOption.TagCategoryId,
+                    keyword);
+
+                if (checkResult.Success)
+                {
+                    PopulateDirectionTagTypes(categoryOption.TagCategoryId, checkResult);
+                }
+            }
+            catch (Exception)
+            {
+                // Silently fail - user can manually trigger direction check if needed
             }
         }
 

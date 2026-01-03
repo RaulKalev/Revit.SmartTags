@@ -88,6 +88,13 @@ namespace SmartTags.ExternalEvents
                 var attachedLength = AttachedLength * scaleFactor;
                 var freeLength = FreeLength * scaleFactor;
 
+                // Initialize collision detector once for all elements if enabled
+                TagCollisionDetector collisionDetector = null;
+                if (EnableCollisionDetection)
+                {
+                    collisionDetector = new TagCollisionDetector(view, CollisionGapMillimeters);
+                }
+
                 int taggedCount = 0;
                 int collisionCount = 0;
                 foreach (var element in elements)
@@ -97,11 +104,9 @@ namespace SmartTags.ExternalEvents
                         continue;
                     }
 
-                    // Initialize collision detector for this element if enabled
-                    TagCollisionDetector collisionDetector = null;
-                    if (EnableCollisionDetection)
+                    // Update obstacles for this specific element (excludes current element but keeps track of newly created tags)
+                    if (collisionDetector != null)
                     {
-                        collisionDetector = new TagCollisionDetector(view, CollisionGapMillimeters);
                         collisionDetector.CollectObstacles(doc, element.Id);
                     }
 
