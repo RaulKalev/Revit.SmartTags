@@ -192,7 +192,14 @@ namespace SmartTags.ExternalEvents
                     }
 
                     double rotationAngle = 0;
-                    if (!usingDirectionOverride)
+                    if (usingDirectionOverride)
+                    {
+                        if (TryGetAngleFromDirection(view, offsetDirection, out var directionAngle))
+                        {
+                            rotationAngle = directionAngle;
+                        }
+                    }
+                    else
                     {
                         rotationAngle = totalAngle;
                     }
@@ -443,6 +450,11 @@ namespace SmartTags.ExternalEvents
                 default:
                     return right;
             }
+        }
+
+        private static bool TryGetAngleFromDirection(View view, XYZ direction, out double angle)
+        {
+            return TryGetSignedAngleInViewPlane(view, direction, out angle);
         }
     }
 }
