@@ -11,24 +11,10 @@ namespace SmartTags.Services
     public class RetagConfirmationController
     {
         private readonly UIApplication _uiApp;
-        private readonly ApplySingleProposalHandler _applyHandler;
-        private readonly RevertSingleProposalHandler _revertHandler;
-        private readonly ExternalEvent _applyEvent;
-        private readonly ExternalEvent _revertEvent;
-
-        private List<TagAdjustmentProposal> _proposals;
-        private int _currentIndex;
-        private int _acceptedCount;
-        private int _rejectedCount;
-        private bool _cancelled;
 
         public RetagConfirmationController(UIApplication uiApp)
         {
             _uiApp = uiApp;
-            _applyHandler = new ApplySingleProposalHandler();
-            _revertHandler = new RevertSingleProposalHandler();
-            _applyEvent = ExternalEvent.Create(_applyHandler);
-            _revertEvent = ExternalEvent.Create(_revertHandler);
         }
 
         public RetagResult RunConfirmationWorkflow(
@@ -47,77 +33,112 @@ namespace SmartTags.Services
                 return result;
             }
 
-            _proposals = proposals;
-            _currentIndex = 0;
-            _acceptedCount = 0;
-            _rejectedCount = 0;
-            _cancelled = false;
-
-            while (_currentIndex < _proposals.Count && !_cancelled)
+            var uiDoc = _uiApp?.ActiveUIDocument;
+            if (uiDoc == null)
             {
-                var proposal = _proposals[_currentIndex];
+                result.ErrorMessage = "No active document.";
+                return result;
+            }
 
-                _applyHandler.Proposal = proposal;
-                _applyEvent.Raise();
+            var doc = uiDoc.Document;
+            var acceptedCount = 0;
+            var rejectedCount = 0;
+            var failedCount = 0;
 
-                System.Threading.Thread.Sleep(200);
+            for (int i = 0; i < proposals.Count; i++)
+            {
+                var proposal = proposals[i];
 
-                while (_applyEvent.IsPending)
+                using (var transaction = new Transaction(doc, "SmartTags: Apply Adjustment"))
                 {
-                    System.Threading.Thread.Sleep(50);
-                }
+                    transaction.Start();
 
-                if (!_applyHandler.Success)
-                {
-                    result.FailedCount++;
-                    _currentIndex++;
-                    continue;
+                    try
+                    {
+                        var tag = doc.GetElement(proposal.TagId) as IndependentTag;
+                        if (tag == null)
+                        {
+                            failedCount++;
+                            transaction.RollBack();
+                            continue;
+                        }
+
+                        proposal.NewState.ApplyToTag(doc, tag);
+                        transaction.Commit();
+                    }
+                    catch
+                    {
+                        if (transaction.HasStarted())
+                        {
+                            transaction.RollBack();
+                        }
+                        failedCount++;
+                        continue;
+                    }
                 }
 
                 FocusOnTag(proposal);
 
                 var userChoice = ShowConfirmationDialog(
-                    $"Adjustment {_currentIndex + 1} of {_proposals.Count}",
-                    $"Apply this adjustment to tag?\n\nReason: {proposal.Reason}");
+                    $"Adjustment {i + 1} of {proposals.Count}",
+                    $"Keep this adjustment?\n\nReason: {proposal.Reason}");
 
                 if (userChoice == ConfirmationChoice.Accept)
                 {
-                    _acceptedCount++;
-                    _currentIndex++;
+                    acceptedCount++;
                 }
                 else if (userChoice == ConfirmationChoice.Reject)
                 {
-                    _revertHandler.Proposal = proposal;
-                    _revertEvent.Raise();
-
-                    System.Threading.Thread.Sleep(200);
-
-                    while (_revertEvent.IsPending)
+                    using (var transaction = new Transaction(doc, "SmartTags: Revert Adjustment"))
                     {
-                        System.Threading.Thread.Sleep(50);
+                        transaction.Start();
+                        try
+                        {
+                            var tag = doc.GetElement(proposal.TagId) as IndependentTag;
+                            if (tag != null)
+                            {
+                                proposal.OldState.ApplyToTag(doc, tag);
+                            }
+                            transaction.Commit();
+                        }
+                        catch
+                        {
+                            if (transaction.HasStarted())
+                            {
+                                transaction.RollBack();
+                            }
+                        }
                     }
-
-                    _rejectedCount++;
-                    _currentIndex++;
+                    rejectedCount++;
                 }
                 else
                 {
-                    _revertHandler.Proposal = proposal;
-                    _revertEvent.Raise();
-
-                    System.Threading.Thread.Sleep(200);
-
-                    while (_revertEvent.IsPending)
+                    using (var transaction = new Transaction(doc, "SmartTags: Revert Adjustment"))
                     {
-                        System.Threading.Thread.Sleep(50);
+                        transaction.Start();
+                        try
+                        {
+                            var tag = doc.GetElement(proposal.TagId) as IndependentTag;
+                            if (tag != null)
+                            {
+                                proposal.OldState.ApplyToTag(doc, tag);
+                            }
+                            transaction.Commit();
+                        }
+                        catch
+                        {
+                            if (transaction.HasStarted())
+                            {
+                                transaction.RollBack();
+                            }
+                        }
                     }
-
-                    _cancelled = true;
+                    break;
                 }
             }
 
-            result.AdjustedCount = _acceptedCount;
-            result.FailedCount += _rejectedCount;
+            result.AdjustedCount = acceptedCount;
+            result.FailedCount = failedCount + rejectedCount;
             result.UnchangedCount = result.TotalTagsFound - result.AdjustedCount - result.FailedCount;
 
             return result;
