@@ -253,20 +253,8 @@ namespace SmartTags.ExternalEvents
                             {
                                 try
                                 {
-                                    // When using direction override, constrain movement to element's axis
-                                    if (usingDirectionOverride && offsetDirection != null && offsetDirection.GetLength() > 1e-9)
-                                    {
-                                        // Project newHead onto the line defined by anchor + offsetDirection
-                                        // This keeps the leader line aligned with element's axis
-                                        var normalizedDirection = offsetDirection.Normalize();
-                                        var vectorToNewHead = newHead - anchor;
-                                        var projectionLength = vectorToNewHead.DotProduct(normalizedDirection);
-
-                                        // Ensure projection maintains safe minimum distance from element
-                                        projectionLength = Math.Max(Math.Abs(projectionLength), safeMinimumOffset) * Math.Sign(projectionLength);
-
-                                        newHead = anchor + normalizedDirection.Multiply(projectionLength);
-                                    }
+                                    // Skip projection constraint - use collision-free position as-is
+                                    // Projection can force tags back toward obstacles
 
                                     // Reposition tag to collision-free location
                                     tag.TagHeadPosition = newHead;
