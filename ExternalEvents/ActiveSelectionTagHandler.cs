@@ -118,7 +118,14 @@ namespace SmartTags.ExternalEvents
                     }
 
                     var offsetDirection = directionVector;
-                    if (!usingDirectionOverride)
+                    if (usingDirectionOverride)
+                    {
+                        if (DetectElementRotation && TryGetElementRotationAngle(element, view, out var elemRot))
+                        {
+                            offsetDirection = RotateVectorAroundAxis(directionVector, viewAxis, elemRot);
+                        }
+                    }
+                    else
                     {
                         offsetDirection = RotateVectorAroundAxis(directionVector, viewAxis, totalAngle);
                     }
