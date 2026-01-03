@@ -49,6 +49,7 @@ namespace SmartTags.UI
         private bool _isUpdatingPlacementDirection;
         private bool _isUpdatingRetagMode;
         private bool _isActiveSelectionModeActive;
+        private ElementId _activeSelectionViewId;
 
         public ObservableCollection<TagCategoryOption> TagCategories { get; } = new ObservableCollection<TagCategoryOption>();
         public ObservableCollection<TagTypeOption> TagTypes { get; } = new ObservableCollection<TagTypeOption>();
@@ -1392,6 +1393,7 @@ namespace SmartTags.UI
             if (_isActiveSelectionModeActive)
             {
                 _isActiveSelectionModeActive = false;
+                _activeSelectionViewId = null;
                 ActiveSelectionToggleButton.Content = "Start Active Selection";
                 return;
             }
@@ -1402,6 +1404,7 @@ namespace SmartTags.UI
             }
 
             _isActiveSelectionModeActive = true;
+            _activeSelectionViewId = _uiApplication?.ActiveUIDocument?.Document?.ActiveView?.Id;
             ActiveSelectionToggleButton.Content = "Stop Active Selection";
 
             System.Threading.Tasks.Task.Run(() =>
@@ -1474,6 +1477,14 @@ namespace SmartTags.UI
                         var doc = uiDoc.Document;
                         var view = doc.ActiveView;
                         if (view == null)
+                        {
+                            _isActiveSelectionModeActive = false;
+                            UpdateActiveSelectionButton();
+                            shouldContinue = false;
+                            return;
+                        }
+
+                        if (_activeSelectionViewId != null && view.Id != _activeSelectionViewId)
                         {
                             _isActiveSelectionModeActive = false;
                             UpdateActiveSelectionButton();
