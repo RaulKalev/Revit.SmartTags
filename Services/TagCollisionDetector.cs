@@ -261,7 +261,7 @@ namespace SmartTags.Services
             }
         }
 
-        public XYZ FindValidPositionWithActualSize(XYZ anchor, XYZ intendedHead, ObstacleBounds actualTagBounds, out bool foundValidPosition)
+        public XYZ FindValidPositionWithActualSize(XYZ anchor, XYZ intendedHead, ObstacleBounds actualTagBounds, out bool foundValidPosition, double minDistanceFromAnchor = 0.0)
         {
             foundValidPosition = false;
 
@@ -287,7 +287,7 @@ namespace SmartTags.Services
 
             // Calculate search parameters
             var offset = (intendedHead - anchor).GetLength();
-            var initialRadius = offset > 1e-9 ? offset : 0.5;
+            var initialRadius = Math.Max(offset, Math.Max(minDistanceFromAnchor, 0.5));
             var maxRadius = Math.Max(5.0, initialRadius * 3.0);
             var radiusStep = Math.Max(0.1, _view.Scale / 120.0);
             var angularSamples = 16;

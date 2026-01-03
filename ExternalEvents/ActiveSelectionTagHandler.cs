@@ -194,7 +194,9 @@ namespace SmartTags.ExternalEvents
                     double rotationAngle = 0;
                     if (usingDirectionOverride)
                     {
-                        if (TryGetAngleFromDirection(view, offsetDirection, out var directionAngle))
+                        // Only rotate tag when element rotation is detected
+                        // Otherwise keep tag horizontal regardless of placement direction
+                        if (DetectElementRotation && TryGetAngleFromDirection(view, offsetDirection, out var directionAngle))
                         {
                             rotationAngle = directionAngle;
                         }
@@ -210,8 +212,10 @@ namespace SmartTags.ExternalEvents
 
                         if (collisionDetector.HasCollisionWithActualBounds(tag, out var actualBounds))
                         {
+                            // Enforce minimum distance from anchor to prevent tags on host elements
+                            var minDistance = MinimumOffsetMillimeters / 304.8; // Convert mm to feet
                             bool foundValidPosition;
-                            var newHead = collisionDetector.FindValidPositionWithActualSize(anchor, head, actualBounds, out foundValidPosition);
+                            var newHead = collisionDetector.FindValidPositionWithActualSize(anchor, head, actualBounds, out foundValidPosition, minDistance);
 
                             if (foundValidPosition && (newHead - head).GetLength() > 1e-6)
                             {
