@@ -741,7 +741,7 @@
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
 
-                                <ToggleButton
+                                <Button
                                     x:Name="ActiveSelectionToggleButton"
                                     Grid.Row="0"
                                     Content="Start Active Selection"

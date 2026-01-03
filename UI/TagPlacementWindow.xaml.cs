@@ -1409,10 +1409,6 @@ namespace SmartTags.UI
 
             if (!ValidateTagSettings())
             {
-                if (ActiveSelectionToggleButton != null)
-                {
-                    ActiveSelectionToggleButton.IsChecked = false;
-                }
                 return;
             }
 
@@ -1559,7 +1555,6 @@ namespace SmartTags.UI
             if (ActiveSelectionToggleButton != null)
             {
                 ActiveSelectionToggleButton.Content = "Start Active Selection";
-                ActiveSelectionToggleButton.IsChecked = false;
             }
         }
 
