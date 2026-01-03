@@ -113,7 +113,11 @@ namespace SmartTags.ExternalEvents
                         totalAngle += elementAngle;
                     }
 
-                    var offsetDirection = RotateVectorAroundAxis(directionVector, viewAxis, totalAngle);
+                    var offsetDirection = directionVector;
+                    if (!usingDirectionOverride)
+                    {
+                        offsetDirection = RotateVectorAroundAxis(directionVector, viewAxis, totalAngle);
+                    }
                     var head = anchor;
                     var leaderOffset = Math.Max(0, attachedLength + freeLength);
 
