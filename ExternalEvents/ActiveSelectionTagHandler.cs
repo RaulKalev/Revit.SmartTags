@@ -150,7 +150,7 @@ namespace SmartTags.ExternalEvents
                     if (EnableCollisionDetection)
                     {
                         collisionDetector = new TagCollisionDetector(view, CollisionGapMillimeters);
-                        collisionDetector.CollectObstacles(doc);
+                        collisionDetector.CollectObstacles(doc, element.Id);
 
                         bool foundValidPosition;
                         head = collisionDetector.FindValidPosition(anchor, head, out foundValidPosition);

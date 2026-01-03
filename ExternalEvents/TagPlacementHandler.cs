@@ -88,14 +88,6 @@ namespace SmartTags.ExternalEvents
                 var attachedLength = AttachedLength * scaleFactor;
                 var freeLength = FreeLength * scaleFactor;
 
-                // Initialize collision detector if enabled
-                TagCollisionDetector collisionDetector = null;
-                if (EnableCollisionDetection)
-                {
-                    collisionDetector = new TagCollisionDetector(view, CollisionGapMillimeters);
-                    collisionDetector.CollectObstacles(doc);
-                }
-
                 int taggedCount = 0;
                 int collisionCount = 0;
                 foreach (var element in elements)
@@ -103,6 +95,14 @@ namespace SmartTags.ExternalEvents
                     if (!TryGetAnchorPoint(element, view, out var anchor))
                     {
                         continue;
+                    }
+
+                    // Initialize collision detector for this element if enabled
+                    TagCollisionDetector collisionDetector = null;
+                    if (EnableCollisionDetection)
+                    {
+                        collisionDetector = new TagCollisionDetector(view, CollisionGapMillimeters);
+                        collisionDetector.CollectObstacles(doc, element.Id);
                     }
 
                     var totalAngle = Angle;
