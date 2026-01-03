@@ -42,6 +42,8 @@ namespace SmartTags.UI
         private readonly ExternalEvent _tagPlacementExternalEvent;
         private readonly RetagApplyHandler _retagApplyHandler;
         private readonly ExternalEvent _retagApplyExternalEvent;
+        private readonly RetagConfirmationHandler _retagConfirmationHandler;
+        private readonly ExternalEvent _retagConfirmationExternalEvent;
         private readonly ActiveSelectionTagHandler _activeSelectionHandler;
         private readonly ExternalEvent _activeSelectionExternalEvent;
         private bool _isUpdatingPlacementDirection;
@@ -76,6 +78,9 @@ namespace SmartTags.UI
 
             _retagApplyHandler = new RetagApplyHandler();
             _retagApplyExternalEvent = ExternalEvent.Create(_retagApplyHandler);
+
+            _retagConfirmationHandler = new RetagConfirmationHandler();
+            _retagConfirmationExternalEvent = ExternalEvent.Create(_retagConfirmationHandler);
 
             _activeSelectionHandler = new ActiveSelectionTagHandler();
             _activeSelectionExternalEvent = ExternalEvent.Create(_activeSelectionHandler);
@@ -1314,37 +1319,21 @@ namespace SmartTags.UI
             }
             else
             {
+                var operationMode = useSelection ? "Retag Selected" : "Normalize View";
+
+                _retagConfirmationHandler.UseSelection = useSelection;
+                _retagConfirmationHandler.TargetElementIds = useSelection ? _retagApplyHandler.TargetElementIds : null;
+                _retagConfirmationHandler.OperationMode = operationMode;
+                _retagConfirmationHandler.AdjustmentService = adjustmentService;
+
+                _retagConfirmationExternalEvent.Raise();
+
                 System.Threading.Tasks.Task.Run(() =>
                 {
-                    var tags = useSelection
-                        ? Services.TagDiscoveryService.FindTagsReferencingElements(doc, view, _retagApplyHandler.TargetElementIds)
-                        : Services.TagDiscoveryService.FindAllManagedTagsInView(doc, view);
-
-                    if (tags == null || tags.Count == 0)
-                    {
-                        Dispatcher.Invoke(() =>
-                        {
-                            MessageBox.Show("No SmartTags-managed tags found.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
-                        });
-                        return;
-                    }
-
-                    var proposals = adjustmentService.ComputeAdjustments(doc, view, tags);
-                    if (proposals == null || proposals.Count == 0)
-                    {
-                        Dispatcher.Invoke(() =>
-                        {
-                            MessageBox.Show("No adjustments needed. All tags are already optimally placed.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
-                        });
-                        return;
-                    }
-
+                    System.Threading.Thread.Sleep(500);
                     Dispatcher.Invoke(() =>
                     {
-                        var controller = new Services.RetagConfirmationController(_uiApplication);
-                        var operationMode = useSelection ? "Retag Selected" : "Normalize View";
-                        var result = controller.RunConfirmationWorkflow(proposals, operationMode);
-
+                        var result = _retagConfirmationHandler.LastResult;
                         if (result != null)
                         {
                             TaskDialog.Show("SmartTags", result.GetSummaryMessage());

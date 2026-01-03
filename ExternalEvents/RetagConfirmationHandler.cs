@@ -1,46 +1,78 @@
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using SmartTags.ExternalEvents;
 using SmartTags.Models;
+using SmartTags.Services;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 
-namespace SmartTags.Services
+namespace SmartTags.ExternalEvents
 {
-    public class RetagConfirmationController
+    public class RetagConfirmationHandler : IExternalEventHandler
     {
-        private readonly UIApplication _uiApp;
+        public ICollection<ElementId> TargetElementIds { get; set; }
+        public bool UseSelection { get; set; }
+        public string OperationMode { get; set; }
+        public TagAdjustmentService AdjustmentService { get; set; }
 
-        public RetagConfirmationController(UIApplication uiApp)
-        {
-            _uiApp = uiApp;
-        }
+        public RetagResult LastResult { get; private set; }
 
-        public RetagResult RunConfirmationWorkflow(
-            List<TagAdjustmentProposal> proposals,
-            string operationMode)
+        public void Execute(UIApplication app)
         {
-            var result = new RetagResult
+            LastResult = new RetagResult
             {
-                OperationMode = operationMode,
-                TotalTagsFound = proposals?.Count ?? 0
+                OperationMode = OperationMode
             };
 
-            if (proposals == null || proposals.Count == 0)
-            {
-                result.ErrorMessage = "No adjustments to confirm.";
-                return result;
-            }
-
-            var uiDoc = _uiApp?.ActiveUIDocument;
+            var uiDoc = app?.ActiveUIDocument;
             if (uiDoc == null)
             {
-                result.ErrorMessage = "No active document.";
-                return result;
+                LastResult.ErrorMessage = "No active document.";
+                return;
             }
 
             var doc = uiDoc.Document;
+            var view = doc.ActiveView;
+
+            if (view == null)
+            {
+                LastResult.ErrorMessage = "No active view.";
+                return;
+            }
+
+            if (AdjustmentService == null)
+            {
+                LastResult.ErrorMessage = "Adjustment service not initialized.";
+                return;
+            }
+
+            List<IndependentTag> tags;
+            if (UseSelection && TargetElementIds != null && TargetElementIds.Count > 0)
+            {
+                tags = TagDiscoveryService.FindTagsReferencingElements(doc, view, TargetElementIds);
+            }
+            else
+            {
+                tags = TagDiscoveryService.FindAllManagedTagsInView(doc, view);
+            }
+
+            LastResult.TotalTagsFound = tags?.Count ?? 0;
+
+            if (tags == null || tags.Count == 0)
+            {
+                LastResult.ErrorMessage = "No managed tags found.";
+                return;
+            }
+
+            var proposals = AdjustmentService.ComputeAdjustments(doc, view, tags);
+
+            if (proposals == null || proposals.Count == 0)
+            {
+                LastResult.ErrorMessage = "No adjustments needed.";
+                return;
+            }
+
             var acceptedCount = 0;
             var rejectedCount = 0;
             var failedCount = 0;
@@ -77,7 +109,7 @@ namespace SmartTags.Services
                     }
                 }
 
-                FocusOnTag(proposal);
+                FocusOnTag(uiDoc, proposal);
 
                 var userChoice = ShowConfirmationDialog(
                     $"Adjustment {i + 1} of {proposals.Count}",
@@ -137,23 +169,25 @@ namespace SmartTags.Services
                 }
             }
 
-            result.AdjustedCount = acceptedCount;
-            result.FailedCount = failedCount + rejectedCount;
-            result.UnchangedCount = result.TotalTagsFound - result.AdjustedCount - result.FailedCount;
-
-            return result;
+            LastResult.AdjustedCount = acceptedCount;
+            LastResult.FailedCount = failedCount + rejectedCount;
+            LastResult.UnchangedCount = LastResult.TotalTagsFound - LastResult.AdjustedCount - LastResult.FailedCount;
         }
 
-        private void FocusOnTag(TagAdjustmentProposal proposal)
+        public string GetName()
         {
-            if (proposal == null || _uiApp?.ActiveUIDocument == null)
+            return "SmartTags Retag Confirmation";
+        }
+
+        private void FocusOnTag(UIDocument uiDoc, TagAdjustmentProposal proposal)
+        {
+            if (proposal == null || uiDoc == null)
             {
                 return;
             }
 
             try
             {
-                var uiDoc = _uiApp.ActiveUIDocument;
                 var doc = uiDoc.Document;
                 var tag = doc.GetElement(proposal.TagId);
 
