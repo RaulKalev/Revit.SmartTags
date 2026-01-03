@@ -44,8 +44,12 @@ namespace SmartTags.ExternalEvents
             bool usingDirectionOverride = false;
             if (DirectionResolver != null)
             {
-                resolvedTagTypeId = DirectionResolver.ResolveTagTypeForDirection(Direction);
-                usingDirectionOverride = true;
+                ElementId directionSpecificTypeId = DirectionResolver.ResolveTagTypeForDirection(Direction);
+                if (directionSpecificTypeId != ElementId.InvalidElementId && directionSpecificTypeId != TagTypeId)
+                {
+                    resolvedTagTypeId = directionSpecificTypeId;
+                    usingDirectionOverride = true;
+                }
             }
 
             var tagSymbol = doc.GetElement(resolvedTagTypeId) as FamilySymbol;
