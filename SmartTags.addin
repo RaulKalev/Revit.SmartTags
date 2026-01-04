@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RevitAddIns>
+  <AddIn Type="Command">
+    <Name>SmartTags</Name>
+    <Assembly>C:\ProgramData\RK Tools\SmartTags\SmartTags.dll</Assembly>
+    <AddInId>{98BEB2E5-57A7-45D6-84EC-1D438060F9D5}</AddInId>
+    <FullClassName>SmartTags.Commands.SmartTagsCommand</FullClassName>
+    <VendorId>RKTL</VendorId>
+    <VendorDescription>RK Tools</VendorDescription>
+    <Description>Smart tag placement with collision detection, direction overrides, and batch operations.</Description>
+    <AllowLoadIntoExistingSession>true</AllowLoadIntoExistingSession>
+  </AddIn>
+</RevitAddIns>
