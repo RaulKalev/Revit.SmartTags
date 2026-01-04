@@ -833,11 +833,11 @@
                                 Background="{DynamicResource SecondaryBackgroundBrush}"
                                 BorderThickness="0"
                                 IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
-                                Padding="12,8"
                                 HorizontalContentAlignment="Left">
                                 <ToggleButton.Template>
                                     <ControlTemplate TargetType="{x:Type ToggleButton}">
                                         <Border
+                                            x:Name="HeaderBorder"
                                             Background="{TemplateBinding Background}"
                                             BorderBrush="Transparent"
                                             BorderThickness="0"
@@ -882,6 +882,17 @@
                                                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
                                                                 To="180"
                                                                 Duration="0:0:0.2" />
+                                                            <ThicknessAnimation
+                                                                Storyboard.TargetName="HeaderBorder"
+                                                                Storyboard.TargetProperty="Padding"
+                                                                To="12,8,12,8"
+                                                                BeginTime="0:0:0.05"
+                                                                Duration="0:0:0.2"
+                                                                DecelerationRatio="0.6">
+                                                                <ThicknessAnimation.EasingFunction>
+                                                                    <CubicEase EasingMode="EaseOut" />
+                                                                </ThicknessAnimation.EasingFunction>
+                                                            </ThicknessAnimation>
                                                         </Storyboard>
                                                     </BeginStoryboard>
                                                 </Trigger.EnterActions>
@@ -893,6 +904,17 @@
                                                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
                                                                 To="0"
                                                                 Duration="0:0:0.2" />
+                                                            <ThicknessAnimation
+                                                                Storyboard.TargetName="HeaderBorder"
+                                                                Storyboard.TargetProperty="Padding"
+                                                                To="12,3,12,3"
+                                                                BeginTime="0:0:0.05"
+                                                                Duration="0:0:0.2"
+                                                                AccelerationRatio="0.6">
+                                                                <ThicknessAnimation.EasingFunction>
+                                                                    <CubicEase EasingMode="EaseIn" />
+                                                                </ThicknessAnimation.EasingFunction>
+                                                            </ThicknessAnimation>
                                                         </Storyboard>
                                                     </BeginStoryboard>
                                                 </Trigger.ExitActions>
@@ -903,6 +925,16 @@
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
                                 </ToggleButton.Template>
+                                <ToggleButton.Style>
+                                    <Style TargetType="ToggleButton">
+                                        <Setter Property="Padding" Value="12,8" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsExpanded, RelativeSource={RelativeSource AncestorType={x:Type Expander}}}" Value="False">
+                                                <Setter Property="Padding" Value="12,3" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ToggleButton.Style>
                             </ToggleButton>
                             
                             <!-- Content -->
@@ -957,6 +989,9 @@
                                     </Storyboard>
                                 </BeginStoryboard>
                             </Trigger.ExitActions>
+                        </Trigger>
+                        <Trigger Property="IsExpanded" Value="False">
+                            <Setter Property="Margin" Value="0,0,0,1" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

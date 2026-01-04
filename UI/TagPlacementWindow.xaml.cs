@@ -37,6 +37,7 @@ namespace SmartTags.UI
         private const string MinimumOffsetKey = "TagPlacementWindow.MinimumOffset";
         private const string RetagExecutionModeKey = "TagPlacementWindow.RetagExecutionMode";
         private const string DirectionKeywordKey = "TagPlacementWindow.DirectionKeyword";
+        private const string SelectedPresetKey = "TagPlacementWindow.SelectedPreset";
         private const string WindowLeftKey = "TagPlacementWindow.WindowLeft";
         private const string WindowTopKey = "TagPlacementWindow.WindowTop";
 
@@ -56,6 +57,7 @@ namespace SmartTags.UI
         private bool _isUpdatingRetagMode;
         private bool _isActiveSelectionModeActive;
         private ElementId _activeSelectionViewId;
+        private bool _isLoadingPreset;
 
         public ObservableCollection<TagCategoryOption> TagCategories { get; } = new ObservableCollection<TagCategoryOption>();
         public ObservableCollection<TagTypeOption> TagTypes { get; } = new ObservableCollection<TagTypeOption>();
@@ -65,6 +67,7 @@ namespace SmartTags.UI
         public ObservableCollection<TagTypeOption> DownTagTypes { get; } = new ObservableCollection<TagTypeOption>();
         public ObservableCollection<LeaderTypeOption> LeaderTypes { get; } = new ObservableCollection<LeaderTypeOption>();
         public ObservableCollection<OrientationOption> OrientationOptions { get; } = new ObservableCollection<OrientationOption>();
+        public ObservableCollection<string> Presets { get; } = new ObservableCollection<string>();
 
         public TagPlacementWindow(UIApplication app)
         {
@@ -96,6 +99,8 @@ namespace SmartTags.UI
             LoadDirectionKeyword();
             LoadCardStates();
             LoadWindowPosition();
+            LoadPresets();
+            LoadSelectedPreset();
 
             InitializeLeaderOptions();
             InitializeOrientationOptions();
@@ -1476,7 +1481,7 @@ namespace SmartTags.UI
             {
                 _isActiveSelectionModeActive = false;
                 _activeSelectionViewId = null;
-                ActiveSelectionToggleButton.Content = "Start Active Selection";
+                ActiveSelectionToggleButton.Content = "Select";
                 return;
             }
 
@@ -1487,7 +1492,7 @@ namespace SmartTags.UI
 
             _isActiveSelectionModeActive = true;
             _activeSelectionViewId = _uiApplication?.ActiveUIDocument?.Document?.ActiveView?.Id;
-            ActiveSelectionToggleButton.Content = "Stop Active Selection";
+            ActiveSelectionToggleButton.Content = "Stop";
 
             System.Threading.Tasks.Task.Run(() =>
             {
@@ -1649,7 +1654,7 @@ namespace SmartTags.UI
         {
             if (ActiveSelectionToggleButton != null)
             {
-                ActiveSelectionToggleButton.Content = "Start Active Selection";
+                ActiveSelectionToggleButton.Content = "Select";
             }
         }
 
@@ -1922,6 +1927,361 @@ namespace SmartTags.UI
             }
             catch (Exception)
             {
+            }
+        }
+
+        private void LoadPresets()
+        {
+            try
+            {
+                var config = LoadConfig();
+                
+                if (config.ContainsKey("Presets"))
+                {
+                    var presets = config["Presets"] as JObject;
+                    if (presets != null)
+                    {
+                        foreach (var preset in presets.Properties())
+                        {
+                            Presets.Add(preset.Name);
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // If loading fails, keep empty presets list
+            }
+        }
+
+        private void LoadSelectedPreset()
+        {
+            try
+            {
+                var config = LoadConfig();
+                
+                if (TryGetString(config, SelectedPresetKey, out var selectedPreset))
+                {
+                    if (Presets.Contains(selectedPreset))
+                    {
+                        _isLoadingPreset = true;
+                        PresetComboBox.SelectedItem = selectedPreset;
+                        _isLoadingPreset = false;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // If loading fails, no preset selected
+            }
+        }
+
+        private void SaveSelectedPreset(string presetName)
+        {
+            try
+            {
+                var config = LoadConfig();
+                config[SelectedPresetKey] = presetName;
+                SaveConfig(config);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private void AddPresetButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new PresetNameDialog();
+            dialog.Owner = this;
+            
+            if (dialog.ShowDialog() == true)
+            {
+                SavePreset(dialog.PresetName);
+            }
+        }
+
+        private void PresetComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            var presetName = PresetComboBox?.SelectedItem as string;
+            if (!string.IsNullOrWhiteSpace(presetName))
+            {
+                LoadPreset(presetName);
+                
+                // Save selected preset (but not during initial load)
+                if (!_isLoadingPreset)
+                {
+                    SaveSelectedPreset(presetName);
+                }
+            }
+        }
+
+        private void LoadPreset(string presetName)
+        {
+            try
+            {
+                var config = LoadConfig();
+                
+                if (!config.ContainsKey("Presets"))
+                {
+                    return;
+                }
+                
+                var presets = config["Presets"] as JObject;
+                if (presets == null || !presets.ContainsKey(presetName))
+                {
+                    return;
+                }
+                
+                var preset = presets[presetName] as JObject;
+                if (preset == null)
+                {
+                    return;
+                }
+                
+                // Tag Selection - match by name since IDs are document-specific
+                if (TryGetString(preset.ToObject<Dictionary<string, object>>(), "CategoryName", out var categoryName))
+                {
+                    var matchingCategory = TagCategories.FirstOrDefault(c => c.DisplayName == categoryName);
+                    if (matchingCategory != null)
+                    {
+                        CategoryComboBox.SelectedItem = matchingCategory;
+                    }
+                }
+                
+                if (TryGetString(preset.ToObject<Dictionary<string, object>>(), "TagTypeName", out var tagTypeName))
+                {
+                    var matchingTagType = TagTypes.FirstOrDefault(t => t.DisplayName == tagTypeName);
+                    if (matchingTagType != null)
+                    {
+                        TagTypeComboBox.SelectedItem = matchingTagType;
+                    }
+                }
+                
+                // Direction Keyword
+                if (TryGetString(preset.ToObject<Dictionary<string, object>>(), "DirectionKeyword", out var keyword))
+                {
+                    DirectionKeywordTextBox.Text = keyword;
+                }
+                
+                // Placement Options
+                var presetDict = preset.ToObject<Dictionary<string, object>>();
+                
+                if (TryGetBool(presetDict, "HasLeader", out var hasLeader))
+                {
+                    LeaderLineCheckBox.IsChecked = hasLeader;
+                }
+                
+                if (TryGetString(presetDict, "LeaderLength", out var leaderLength))
+                {
+                    LeaderLengthTextBox.Text = leaderLength;
+                }
+                
+                if (TryGetString(presetDict, "LeaderType", out var leaderType))
+                {
+                    var matchingLeaderType = LeaderTypes.FirstOrDefault(lt => lt.Name == leaderType);
+                    if (matchingLeaderType != null)
+                    {
+                        LeaderTypeComboBox.SelectedItem = matchingLeaderType;
+                    }
+                }
+                
+                if (TryGetString(presetDict, "Orientation", out var orientation))
+                {
+                    var matchingOrientation = OrientationOptions.FirstOrDefault(o => o.Name == orientation);
+                    if (matchingOrientation != null)
+                    {
+                        OrientationComboBox.SelectedItem = matchingOrientation;
+                    }
+                }
+                
+                if (TryGetString(presetDict, "Angle", out var angle))
+                {
+                    AngleTextBox.Text = angle;
+                }
+                
+                if (TryGetBool(presetDict, "DetectElementRotation", out var detectRotation))
+                {
+                    DetectRotationCheckBox.IsChecked = detectRotation;
+                }
+                
+                // Placement Direction
+                if (TryGetString(presetDict, "PlacementDirection", out var direction))
+                {
+                    if (Enum.TryParse<PlacementDirection>(direction, true, out var parsedDirection))
+                    {
+                        SetPlacementDirection(parsedDirection);
+                    }
+                }
+                
+                // Anchor Point
+                if (TryGetString(presetDict, "AnchorPoint", out var anchorPoint))
+                {
+                    switch (anchorPoint)
+                    {
+                        case "Center": AnchorCenterRadio.IsChecked = true; break;
+                        case "TopLeft": AnchorTopLeftRadio.IsChecked = true; break;
+                        case "TopCenter": AnchorTopCenterRadio.IsChecked = true; break;
+                        case "TopRight": AnchorTopRightRadio.IsChecked = true; break;
+                        case "LeftCenter": AnchorLeftCenterRadio.IsChecked = true; break;
+                        case "RightCenter": AnchorRightCenterRadio.IsChecked = true; break;
+                        case "BottomLeft": AnchorBottomLeftRadio.IsChecked = true; break;
+                        case "BottomCenter": AnchorBottomCenterRadio.IsChecked = true; break;
+                        case "BottomRight": AnchorBottomRightRadio.IsChecked = true; break;
+                    }
+                }
+                
+                // Collision Detection
+                if (TryGetBool(presetDict, "EnableCollisionDetection", out var enableCollision))
+                {
+                    CollisionDetectionCheckBox.IsChecked = enableCollision;
+                }
+                
+                if (TryGetString(presetDict, "CollisionGap", out var collisionGap))
+                {
+                    CollisionGapTextBox.Text = collisionGap;
+                }
+                
+                if (TryGetString(presetDict, "MinimumOffset", out var minimumOffset))
+                {
+                    MinimumOffsetTextBox.Text = minimumOffset;
+                }
+                
+                // Retag/Normalize
+                if (TryGetBool(presetDict, "RetagFullyAutomatic", out var fullyAutomatic))
+                {
+                    _isUpdatingRetagMode = true;
+                    RetagFullyAutomaticCheckBox.IsChecked = fullyAutomatic;
+                    RetagUserConfirmationCheckBox.IsChecked = !fullyAutomatic;
+                    _isUpdatingRetagMode = false;
+                }
+                
+                // Active Selection
+                if (TryGetBool(presetDict, "SkipIfTagged", out var skipIfTagged))
+                {
+                    SkipIfTaggedCheckBox.IsChecked = skipIfTagged;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to load preset: {ex.Message}", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void SavePreset(string presetName)
+        {
+            try
+            {
+                var config = LoadConfig();
+                
+                // Create preset object with all current settings
+                var preset = new Dictionary<string, object>();
+                
+                // Tag Selection
+                var categoryOption = CategoryComboBox?.SelectedItem as TagCategoryOption;
+                if (categoryOption != null)
+                {
+                    preset["CategoryId"] = GetElementIdValue(categoryOption.TagCategoryId);
+                    preset["CategoryName"] = categoryOption.DisplayName;
+                }
+                
+                var tagTypeOption = TagTypeComboBox?.SelectedItem as TagTypeOption;
+                if (tagTypeOption != null)
+                {
+                    preset["TagTypeId"] = GetElementIdValue(tagTypeOption.TypeId);
+                    preset["TagTypeName"] = tagTypeOption.DisplayName;
+                }
+                
+                // Direction Tag Override
+                preset["DirectionKeyword"] = DirectionKeywordTextBox?.Text ?? string.Empty;
+                
+                var leftTagType = LeftTagTypeComboBox?.SelectedItem as TagTypeOption;
+                if (leftTagType != null)
+                {
+                    preset["LeftTagTypeId"] = GetElementIdValue(leftTagType.TypeId);
+                }
+                
+                var rightTagType = RightTagTypeComboBox?.SelectedItem as TagTypeOption;
+                if (rightTagType != null)
+                {
+                    preset["RightTagTypeId"] = GetElementIdValue(rightTagType.TypeId);
+                }
+                
+                var upTagType = UpTagTypeComboBox?.SelectedItem as TagTypeOption;
+                if (upTagType != null)
+                {
+                    preset["UpTagTypeId"] = GetElementIdValue(upTagType.TypeId);
+                }
+                
+                var downTagType = DownTagTypeComboBox?.SelectedItem as TagTypeOption;
+                if (downTagType != null)
+                {
+                    preset["DownTagTypeId"] = GetElementIdValue(downTagType.TypeId);
+                }
+                
+                // Placement Options
+                preset["HasLeader"] = LeaderLineCheckBox?.IsChecked == true;
+                preset["LeaderLength"] = LeaderLengthTextBox?.Text ?? "0";
+                
+                var leaderType = LeaderTypeComboBox?.SelectedItem as LeaderTypeOption;
+                preset["LeaderType"] = leaderType?.Name ?? "Attached end";
+                
+                var orientation = OrientationComboBox?.SelectedItem as OrientationOption;
+                preset["Orientation"] = orientation?.Name ?? "Horizontal";
+                
+                preset["Angle"] = AngleTextBox?.Text ?? "0";
+                preset["DetectElementRotation"] = DetectRotationCheckBox?.IsChecked == true;
+                
+                // Placement Direction
+                preset["PlacementDirection"] = GetPlacementDirection().ToString();
+                
+                // Anchor Point
+                if (AnchorCenterRadio?.IsChecked == true) preset["AnchorPoint"] = "Center";
+                else if (AnchorTopLeftRadio?.IsChecked == true) preset["AnchorPoint"] = "TopLeft";
+                else if (AnchorTopCenterRadio?.IsChecked == true) preset["AnchorPoint"] = "TopCenter";
+                else if (AnchorTopRightRadio?.IsChecked == true) preset["AnchorPoint"] = "TopRight";
+                else if (AnchorLeftCenterRadio?.IsChecked == true) preset["AnchorPoint"] = "LeftCenter";
+                else if (AnchorRightCenterRadio?.IsChecked == true) preset["AnchorPoint"] = "RightCenter";
+                else if (AnchorBottomLeftRadio?.IsChecked == true) preset["AnchorPoint"] = "BottomLeft";
+                else if (AnchorBottomCenterRadio?.IsChecked == true) preset["AnchorPoint"] = "BottomCenter";
+                else if (AnchorBottomRightRadio?.IsChecked == true) preset["AnchorPoint"] = "BottomRight";
+                
+                // Collision Detection
+                preset["EnableCollisionDetection"] = CollisionDetectionCheckBox?.IsChecked == true;
+                preset["CollisionGap"] = CollisionGapTextBox?.Text ?? "1";
+                preset["MinimumOffset"] = MinimumOffsetTextBox?.Text ?? "300";
+                
+                // Retag/Normalize
+                preset["RetagFullyAutomatic"] = RetagFullyAutomaticCheckBox?.IsChecked == true;
+                
+                // Active Selection
+                preset["SkipIfTagged"] = SkipIfTaggedCheckBox?.IsChecked == true;
+                
+                // Save preset to config
+                if (!config.ContainsKey("Presets"))
+                {
+                    config["Presets"] = new Dictionary<string, object>();
+                }
+                
+                var presets = config["Presets"] as JObject ?? new JObject();
+                presets[presetName] = JObject.FromObject(preset);
+                config["Presets"] = presets;
+                
+                SaveConfig(config);
+                
+                // Add preset to combobox if not already there
+                if (!Presets.Contains(presetName))
+                {
+                    Presets.Add(presetName);
+                }
+                
+                // Select the saved preset
+                PresetComboBox.SelectedItem = presetName;
+                
+                MessageBox.Show($"Preset '{presetName}' saved successfully.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to save preset: {ex.Message}", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
     }
