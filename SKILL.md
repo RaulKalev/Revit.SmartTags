@@ -6,6 +6,13 @@ This file provides practical, context-specific guidance for AI assistants workin
 
 ## Quick Start
 
+## Guardrails (Production-Critical)
+The following features are complete and must not be re-implemented or refactored unless explicitly requested:
+- Active Selection Tagging Mode
+- Direction-Based Tag Type Override (Left/Right/Up/Down)
+- Collision Detection + Safe Distance
+- Retag/Normalize workflow
+
 ### Understanding the Codebase
 ```
 SmartTags/
@@ -35,7 +42,13 @@ Service performs Revit API operations (Revit Thread)
     ↓
 Handler sets result properties (Revit Thread)
     ↓
-UI reads results via Dispatcher.Invoke (UI Thread)
+UI reads result state without blocking Revit (UI Thread)
+**UI completion patterns (do not block Revit)**:
+- ExternalEvent sets result flags + UI checks status via DispatcherTimer
+- ExternalEvent posts a callback action to UI (captured SynchronizationContext)
+- ExternalEvent writes to a shared result object; UI reads it after completion signal
+
+
 ```
 
 ---
@@ -232,6 +245,15 @@ if (shouldDisableLeader)
 
 ### Collision Detection Algorithm
 
+**Correctness constraints**:
+- Collision computations must be in **view-plane coordinates** and remain correct for **rotated views**.
+- Bounding boxes often require transforms; do not assume world XYZ aligns with the view.
+
+**When no valid position exists**:
+1) If leader enabled: increase leader length in steps and retry.
+2) Escape-spiral search around intended point.
+3) Choose candidate with **least overlap area** + log a warning (never random/last-candidate).
+
 **Two-Pass Approach**:
 1. **Estimated bounds**: Use fixed size estimate for initial placement
 2. **Actual bounds**: After tag creation, get real bounds and adjust if needed
@@ -261,6 +283,12 @@ for (double radius = initialRadius; radius <= maxRadius; radius += step)
 ---
 
 ## Testing Strategies
+
+## Ricaun App Loader (Development)
+During development the add-in may be loaded/unloaded multiple times per Revit session.
+- Unsubscribe ALL static/event handlers on shutdown/exit of modes (Idling, ViewActivated, DocumentChanged, etc.)
+- Avoid static caches that assume one-time initialization
+- Ensure selection modes exit cleanly on reload
 
 ### Manual Testing Workflow
 
@@ -398,17 +426,12 @@ if (_externalEvent.IsPending)
 // Raise event
 _externalEvent.Raise();
 
-// Wait with timeout
-var timeout = DateTime.Now.AddSeconds(5);
-while (_externalEvent.IsPending && DateTime.Now < timeout)
-{
-    System.Threading.Thread.Sleep(50);
-}
+**Preferred debugging patterns (avoid blocking UI thread)**:
+- Disable the triggering button while an event is in-flight.
+- Use a `DispatcherTimer` to poll a handler `Completed` flag.
+- Log start/end timestamps inside `Execute()` to confirm execution order.
+- If Revit is in a modal state (dialogs), ExternalEvents will not run until it returns to normal UI.
 
-if (_externalEvent.IsPending)
-{
-    MessageBox.Show("Event timed out!");
-}
 ```
 
 ---
@@ -562,15 +585,17 @@ foreach (var elementId in elementIds)
 
 ## WPF/XAML Patterns
 
-### ComboBox Binding Pattern
+### ComboBox Binding Pattern (Preferred)
+
+Use TwoWay binding to a VM property. Avoid `SelectionChanged` for business logic.
 
 ```xml
-<!-- XAML -->
 <ComboBox
-    x:Name="CategoryComboBox"
     ItemsSource="{Binding TagCategories}"
+    SelectedItem="{Binding SelectedTagCategory, Mode=TwoWay}"
     DisplayMemberPath="DisplayName"
-    SelectionChanged="CategoryComboBox_SelectionChanged" />
+    IsSynchronizedWithCurrentItem="False" />
+
 ```
 
 ```csharp

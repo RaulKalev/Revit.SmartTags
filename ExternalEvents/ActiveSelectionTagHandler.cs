@@ -19,10 +19,12 @@ namespace SmartTags.ExternalEvents
         public double Angle { get; set; }
         public PlacementDirection Direction { get; set; }
         public bool DetectElementRotation { get; set; }
+        public AnchorPoint AnchorPoint { get; set; } = AnchorPoint.Center;
         public bool EnableCollisionDetection { get; set; }
         public double CollisionGapMillimeters { get; set; }
         public double MinimumOffsetMillimeters { get; set; }
         public bool SkipIfAlreadyTagged { get; set; }
+        public LeaderEndCondition LeaderEndCondition { get; set; } = LeaderEndCondition.Attached;
 
         public bool Success { get; private set; }
         public string Message { get; private set; }
@@ -70,17 +72,13 @@ namespace SmartTags.ExternalEvents
                 }
             }
 
-            ElementId resolvedTagTypeId = TagTypeId;
-            bool usingDirectionOverride = false;
-            if (DirectionResolver != null)
-            {
-                ElementId directionSpecificTypeId = DirectionResolver.ResolveTagTypeForDirection(Direction);
-                if (directionSpecificTypeId != ElementId.InvalidElementId && directionSpecificTypeId != TagTypeId)
-                {
-                    resolvedTagTypeId = directionSpecificTypeId;
-                    usingDirectionOverride = true;
-                }
-            }
+            // Resolve tag type based on direction override settings
+            ElementId resolvedTagTypeId = TagTypeOrientationResolver.ResolveTagType(
+                TagTypeId,
+                DirectionResolver,
+                Direction
+            );
+            bool usingDirectionOverride = resolvedTagTypeId != TagTypeId;
 
             var tagSymbol = doc.GetElement(resolvedTagTypeId) as FamilySymbol;
 
@@ -96,39 +94,26 @@ namespace SmartTags.ExternalEvents
                         doc.Regenerate();
                     }
 
-                    if (!TryGetAnchorPoint(element, view, out var anchor))
+                    if (!AnchorPointService.TryGetAnchorPoint(element, view, AnchorPoint, out var anchor))
                     {
                         Message = "Could not determine anchor point.";
                         return;
                     }
 
                     var directionVector = GetDirectionVector(view, Direction);
-                    var viewDirection = view.ViewDirection;
-                    var viewAxis = viewDirection != null && viewDirection.GetLength() > 1e-9
-                        ? viewDirection.Normalize()
-                        : XYZ.BasisZ;
                     var scaleFactor = Math.Max(1, view.Scale);
                     var attachedLength = AttachedLength * scaleFactor;
                     var freeLength = FreeLength * scaleFactor;
 
-                    var totalAngle = Angle;
-                    if (DetectElementRotation && TryGetElementRotationAngle(element, view, out var elementAngle))
-                    {
-                        totalAngle += elementAngle;
-                    }
-
-                    var offsetDirection = directionVector;
-                    if (usingDirectionOverride)
-                    {
-                        if (DetectElementRotation && TryGetElementRotationAngle(element, view, out var elemRot))
-                        {
-                            offsetDirection = RotateVectorAroundAxis(directionVector, viewAxis, elemRot);
-                        }
-                    }
-                    else
-                    {
-                        offsetDirection = RotateVectorAroundAxis(directionVector, viewAxis, totalAngle);
-                    }
+                    // Resolve offset direction (where tag will be placed)
+                    var offsetDirection = TagTypeOrientationResolver.ResolveOffsetDirection(
+                        directionVector,
+                        view,
+                        DetectElementRotation,
+                        usingDirectionOverride,
+                        element,
+                        Angle
+                    );
                     var head = anchor;
                     var leaderOffset = Math.Max(0, attachedLength + freeLength);
 
@@ -184,6 +169,12 @@ namespace SmartTags.ExternalEvents
                         {
                             tag.HasLeader = false;
                         }
+
+                        // Set leader end condition if tag has a leader
+                        if (HasLeader)
+                        {
+                            tag.LeaderEndCondition = LeaderEndCondition;
+                        }
                     }
                     catch
                     {
@@ -200,20 +191,15 @@ namespace SmartTags.ExternalEvents
                         }
                     }
 
-                    double rotationAngle = 0;
-                    if (usingDirectionOverride)
-                    {
-                        // Only rotate tag when element rotation is detected
-                        // Otherwise keep tag horizontal regardless of placement direction
-                        if (DetectElementRotation && TryGetAngleFromDirection(view, offsetDirection, out var directionAngle))
-                        {
-                            rotationAngle = directionAngle;
-                        }
-                    }
-                    else
-                    {
-                        rotationAngle = totalAngle;
-                    }
+                    // Resolve tag orientation (rotation angle)
+                    double rotationAngle = TagTypeOrientationResolver.ResolveOrientation(
+                        Angle,
+                        DetectElementRotation,
+                        usingDirectionOverride,
+                        element,
+                        view,
+                        offsetDirection
+                    );
 
                     if (collisionDetector != null && tag != null)
                     {
@@ -251,6 +237,7 @@ namespace SmartTags.ExternalEvents
                     {
                         try
                         {
+                            var viewDirection = view.ViewDirection;
                             var axis = Line.CreateBound(head, head + viewDirection);
                             ElementTransformUtils.RotateElement(doc, tag.Id, axis, rotationAngle);
                         }
@@ -279,40 +266,6 @@ namespace SmartTags.ExternalEvents
         public string GetName()
         {
             return "SmartTags Active Selection Tag";
-        }
-
-        private static bool TryGetAnchorPoint(Element element, View view, out XYZ anchor)
-        {
-            anchor = null;
-            if (element == null || view == null)
-            {
-                return false;
-            }
-
-            var bbox = element.get_BoundingBox(view);
-            if (bbox != null)
-            {
-                anchor = (bbox.Min + bbox.Max) * 0.5;
-                return true;
-            }
-
-            if (element.Location is LocationPoint point)
-            {
-                anchor = point.Point;
-                return true;
-            }
-
-            if (element.Location is LocationCurve curve)
-            {
-                var c = curve.Curve;
-                if (c != null)
-                {
-                    anchor = (c.GetEndPoint(0) + c.GetEndPoint(1)) * 0.5;
-                    return true;
-                }
-            }
-
-            return false;
         }
 
         private static IndependentTag CreateTag(Document doc, View view, Reference reference, XYZ head, TagOrientation orientation, bool hasLeader)

@@ -1,22 +1,27 @@
 # SmartTags
 
-SmartTags is a Revit add-in that replaces the default tag placement workflow with a focused UI for category/tag selection, leader controls, orientation + rotation overrides, placement direction presets, and intelligent collision-aware tag placement.
+SmartTags is a Revit add-in that replaces the default tag placement workflow with a streamlined UI for intelligent tag placement with collision detection, direction-based tag type selection, and batch operations.
 
 ## Features
 
-- **Smart Tag Placement**: Select an element category and matching tag family/type from the current model.
-- **Leader Controls**: Configure leader usage, length, type (Attached/Free end), orientation, and angle when placing tags.
-- **Placement Direction**: Pick a placement direction (Up/Down/Left/Right) with a dedicated card for leader and direction controls.
-- **User Preferences**: Save/load preferences including theme, window size, last selections, leader length/angle, and direction.
-- **Batch Operations**: Tag all elements of the chosen category in the active view or just the current selection with the same settings.
-- **Element Rotation Detection**: Automatically detect element rotation and apply it to both tag rotation and placement offsets.
-- **Collision Detection**: Intelligent collision avoidance system that prevents tags from overlapping with visible elements, existing tags, and text annotations:
+- **Smart Tag Placement**: Select an element category and matching tag family/type from the current model
+- **Unified Placement Controls**: Compact 4-column layout combining direction, anchor point, leader settings, and orientation in one card
+- **Active Selection Mode**: Click-to-tag workflow with duplicate detection and category filtering
+- **Direction-Based Tag Types**: Automatically select different tag types based on placement direction (Left/Right/Up/Down)
+- **Anchor Point Selection**: Choose from 9 anchor positions (corners, edges, center) for precise tag placement
+- **Leader Controls**: Configure leader usage, length (with mm suffix), type (Attached/Free end)
+- **Orientation & Rotation**: Set tag orientation and rotation angle (with ° suffix), with optional element rotation detection
+- **User Preferences**: Persistent settings including window position, theme, card expansion states, and all placement parameters
+- **Batch Operations**: Tag all elements or selected elements with the same settings
+- **Collision Detection**: Intelligent collision avoidance system with spatial indexing:
   - Automatic tag size detection using actual bounding boxes
   - Post-creation validation and repositioning for optimal placement
   - Configurable gap buffer (default 1mm) between tags and obstacles
   - Radial search algorithm finds the closest collision-free position
-  - Respects minimum offset when leaders are disabled
-  - Works with both "Tag All" and "Tag Selected" workflows
+  - Deterministic fallback with least-overlap selection when no collision-free position exists
+  - Works with all tagging workflows (batch, selection, active selection)
+- **Smooth Animations**: Card expansion/collapse animations (0.2s) with window auto-resize
+- **Window Position Memory**: Window reopens at the last saved position
 
 ## Supported Revit Versions
 

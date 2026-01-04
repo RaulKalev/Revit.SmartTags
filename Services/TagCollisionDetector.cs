@@ -11,21 +11,39 @@ namespace SmartTags.Services
         private readonly double _gapInFeet;
         private List<ObstacleBounds> _obstacles = new List<ObstacleBounds>();
         private List<ObstacleBounds> _newlyCreatedTags = new List<ObstacleBounds>();
+        private SpatialIndex2D _spatialIndex;
+        private SpatialIndex2D _newTagsIndex;
 
         // Estimated tag size for collision checking (conservative estimate)
         // Made larger to account for tags with values/text
         private const double EstimatedTagWidthFeet = 2.0;   // ~600mm - conservative for text
         private const double EstimatedTagHeightFeet = 0.66; // ~200mm - conservative for text height
 
+        // Performance diagnostics
+        private int _collisionChecksPerformed = 0;
+        private int _spatialFilteredChecks = 0;
+
         public TagCollisionDetector(View view, double gapInMillimeters)
         {
             _view = view ?? throw new ArgumentNullException(nameof(view));
             _gapInFeet = MillimetersToFeet(gapInMillimeters);
+
+            // Cell size ~5 feet for good spatial partitioning
+            _spatialIndex = new SpatialIndex2D(5.0);
+            _newTagsIndex = new SpatialIndex2D(5.0);
         }
 
         public void CollectObstacles(Document doc, ElementId excludeElementId = null)
         {
+            CollectObstaclesExcludingTags(doc, null, excludeElementId);
+        }
+
+        public void CollectObstaclesExcludingTags(Document doc, HashSet<ElementId> excludeTagIds, ElementId excludeElementId = null)
+        {
             _obstacles.Clear();
+            _spatialIndex.Clear();
+            _collisionChecksPerformed = 0;
+            _spatialFilteredChecks = 0;
 
             if (doc == null || _view == null)
             {
@@ -34,12 +52,12 @@ namespace SmartTags.Services
 
             try
             {
-                // Collect visible model elements in view
-                var visibleElements = new FilteredElementCollector(doc, _view.Id)
+                // Single combined collection pass to reduce overhead
+                var allElements = new FilteredElementCollector(doc, _view.Id)
                     .WhereElementIsNotElementType()
                     .ToList();
 
-                foreach (var element in visibleElements)
+                foreach (var element in allElements)
                 {
                     try
                     {
@@ -49,16 +67,28 @@ namespace SmartTags.Services
                             continue;
                         }
 
-                        // Skip tags (we'll collect them separately)
-                        if (element is IndependentTag)
+                        // Skip tags being normalized (to prevent self-collision)
+                        if (excludeTagIds != null && element is IndependentTag && excludeTagIds.Contains(element.Id))
                         {
                             continue;
                         }
 
-                        var bounds = GetViewPlaneBounds(element);
+                        ObstacleBounds bounds = null;
+
+                        // Get bounds based on element type
+                        if (element is IndependentTag tag)
+                        {
+                            bounds = GetTagBounds(tag);
+                        }
+                        else
+                        {
+                            bounds = GetViewPlaneBounds(element);
+                        }
+
                         if (bounds != null)
                         {
                             _obstacles.Add(bounds);
+                            _spatialIndex.AddObstacle(bounds);
                         }
                     }
                     catch
@@ -67,55 +97,12 @@ namespace SmartTags.Services
                         continue;
                     }
                 }
-
-                // Explicitly collect text notes (annotations)
-                var textNotes = new FilteredElementCollector(doc, _view.Id)
-                    .OfClass(typeof(TextNote))
-                    .ToList();
-
-                foreach (var textNote in textNotes)
-                {
-                    try
-                    {
-                        var bounds = GetViewPlaneBounds(textNote);
-                        if (bounds != null)
-                        {
-                            _obstacles.Add(bounds);
-                        }
-                    }
-                    catch
-                    {
-                        continue;
-                    }
-                }
-
-                // Collect existing tags
-                var tags = new FilteredElementCollector(doc, _view.Id)
-                    .OfClass(typeof(IndependentTag))
-                    .Cast<IndependentTag>()
-                    .ToList();
-
-                foreach (var tag in tags)
-                {
-                    try
-                    {
-                        var bounds = GetTagBounds(tag);
-                        if (bounds != null)
-                        {
-                            _obstacles.Add(bounds);
-                        }
-                    }
-                    catch
-                    {
-                        // Skip problematic tags
-                        continue;
-                    }
-                }
             }
             catch
             {
                 // If obstacle collection fails entirely, continue with empty obstacles list
                 _obstacles.Clear();
+                _spatialIndex.Clear();
             }
         }
 
@@ -210,6 +197,7 @@ namespace SmartTags.Services
                 if (bounds != null)
                 {
                     _newlyCreatedTags.Add(bounds);
+                    _newTagsIndex.AddObstacle(bounds);
                 }
             }
             catch
@@ -323,10 +311,14 @@ namespace SmartTags.Services
                         centerY + halfHeight
                     );
 
-                    // Check collision with actual bounds
+                    // Use spatial index for broad-phase filtering
+                    var nearbyObstacles = _spatialIndex.GetNearbyObstacles(candidateBounds);
+                    _spatialFilteredChecks += nearbyObstacles.Count;
+
                     bool hasCollision = false;
-                    foreach (var obstacle in _obstacles)
+                    foreach (var obstacle in nearbyObstacles)
                     {
+                        _collisionChecksPerformed++;
                         if (candidateBounds.Overlaps(obstacle, _gapInFeet))
                         {
                             hasCollision = true;
@@ -336,8 +328,10 @@ namespace SmartTags.Services
 
                     if (!hasCollision)
                     {
-                        foreach (var obstacle in _newlyCreatedTags)
+                        var nearbyNewTags = _newTagsIndex.GetNearbyObstacles(candidateBounds);
+                        foreach (var obstacle in nearbyNewTags)
                         {
+                            _collisionChecksPerformed++;
                             if (candidateBounds.Overlaps(obstacle, _gapInFeet))
                             {
                                 hasCollision = true;
@@ -365,7 +359,21 @@ namespace SmartTags.Services
                 }
             }
 
+            // Fallback strategy when no valid position found
+            if (!foundValidPosition)
+            {
+                System.Diagnostics.Debug.WriteLine("[SmartTags] No collision-free position found, using fallback strategy");
+
+                // Try least-overlap candidate as last resort
+                bestCandidate = SelectLeastOverlapCandidate(anchor, actualTagBounds, initialRadius, maxRadius);
+            }
+
             return bestCandidate;
+        }
+
+        public bool HasCollisionAtPosition(XYZ position)
+        {
+            return HasCollision(position);
         }
 
         private bool HasCollision(XYZ position)
@@ -382,18 +390,24 @@ namespace SmartTags.Services
                 return false;
             }
 
-            // Check if tag bounds would overlap with obstacles
-            foreach (var obstacle in _obstacles)
+            // Use spatial index for broad-phase filtering
+            var nearbyObstacles = _spatialIndex.GetNearbyObstacles(tagBounds);
+            _spatialFilteredChecks += nearbyObstacles.Count;
+
+            foreach (var obstacle in nearbyObstacles)
             {
+                _collisionChecksPerformed++;
                 if (tagBounds.Overlaps(obstacle, _gapInFeet))
                 {
                     return true;
                 }
             }
 
-            // Check against newly created tags
-            foreach (var obstacle in _newlyCreatedTags)
+            // Check against newly created tags (usually small list, spatial index optional)
+            var nearbyNewTags = _newTagsIndex.GetNearbyObstacles(tagBounds);
+            foreach (var obstacle in nearbyNewTags)
             {
+                _collisionChecksPerformed++;
                 if (tagBounds.Overlaps(obstacle, _gapInFeet))
                 {
                     return true;
@@ -535,6 +549,119 @@ namespace SmartTags.Services
         {
             // 1 foot = 304.8 millimeters (exact)
             return mm / 304.8;
+        }
+
+        /// <summary>
+        /// Compute overlap area between two 2D rectangles
+        /// </summary>
+        private static double ComputeOverlapArea(ObstacleBounds a, ObstacleBounds b)
+        {
+            if (a == null || b == null)
+            {
+                return 0;
+            }
+
+            double overlapWidth = Math.Max(0, Math.Min(a.MaxX, b.MaxX) - Math.Max(a.MinX, b.MinX));
+            double overlapHeight = Math.Max(0, Math.Min(a.MaxY, b.MaxY) - Math.Max(a.MinY, b.MinY));
+
+            return overlapWidth * overlapHeight;
+        }
+
+        /// <summary>
+        /// Select candidate with least overlap when no collision-free position exists
+        /// </summary>
+        private XYZ SelectLeastOverlapCandidate(XYZ anchor, ObstacleBounds tagBounds, double minDistance, double maxRadius)
+        {
+            if (anchor == null || tagBounds == null || _view == null)
+            {
+                return anchor;
+            }
+
+            var right = _view.RightDirection;
+            var up = _view.UpDirection;
+
+            if (right == null || up == null || right.GetLength() < 1e-9 || up.GetLength() < 1e-9)
+            {
+                return anchor;
+            }
+
+            double tagWidth = tagBounds.MaxX - tagBounds.MinX;
+            double tagHeight = tagBounds.MaxY - tagBounds.MinY;
+            double halfWidth = tagWidth / 2.0;
+            double halfHeight = tagHeight / 2.0;
+
+            var radiusStep = Math.Max(0.1, _view.Scale / 120.0);
+            var angularSamples = 16;
+
+            XYZ bestCandidate = anchor + right.Multiply(minDistance);
+            double leastOverlap = double.MaxValue;
+
+            for (double radius = minDistance; radius <= maxRadius; radius += radiusStep)
+            {
+                for (int i = 0; i < angularSamples; i++)
+                {
+                    double angle = (2.0 * Math.PI * i) / angularSamples;
+
+                    var offsetInViewPlane = right.Multiply(radius * Math.Cos(angle))
+                        .Add(up.Multiply(radius * Math.Sin(angle)));
+                    var candidate = anchor + offsetInViewPlane;
+
+                    double centerX = candidate.DotProduct(right);
+                    double centerY = candidate.DotProduct(up);
+
+                    var candidateBounds = new ObstacleBounds(
+                        centerX - halfWidth,
+                        centerX + halfWidth,
+                        centerY - halfHeight,
+                        centerY + halfHeight
+                    );
+
+                    // Calculate total overlap area with all obstacles
+                    double totalOverlap = 0;
+                    var nearbyObstacles = _spatialIndex.GetNearbyObstacles(candidateBounds);
+
+                    foreach (var obstacle in nearbyObstacles)
+                    {
+                        totalOverlap += ComputeOverlapArea(candidateBounds, obstacle);
+                    }
+
+                    var nearbyNewTags = _newTagsIndex.GetNearbyObstacles(candidateBounds);
+                    foreach (var obstacle in nearbyNewTags)
+                    {
+                        totalOverlap += ComputeOverlapArea(candidateBounds, obstacle);
+                    }
+
+                    if (totalOverlap < leastOverlap)
+                    {
+                        leastOverlap = totalOverlap;
+                        bestCandidate = candidate;
+
+                        // Perfect candidate found
+                        if (totalOverlap < 1e-9)
+                        {
+                            return bestCandidate;
+                        }
+                    }
+                }
+            }
+
+            // Log warning if we had to accept overlap
+            if (leastOverlap > 1e-9)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[SmartTags] Warning: No collision-free position found. Using least-overlap candidate with {leastOverlap:F3} sq ft overlap.");
+            }
+
+            return bestCandidate;
+        }
+
+        /// <summary>
+        /// Get performance diagnostics
+        /// </summary>
+        public string GetPerformanceDiagnostics()
+        {
+            int totalObstacles = _obstacles.Count + _newlyCreatedTags.Count;
+            return $"Collision checks: {_collisionChecksPerformed}, Spatial filtered: {_spatialFilteredChecks}, Total obstacles: {totalObstacles}";
         }
 
         public class ObstacleBounds

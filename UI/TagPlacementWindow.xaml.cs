@@ -13,6 +13,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using SmartTags.ExternalEvents;
 
 namespace SmartTags.UI
@@ -20,11 +21,14 @@ namespace SmartTags.UI
     public partial class TagPlacementWindow : Window
     {
         private const string ConfigFilePath = @"C:\ProgramData\RK Tools\SmartTags\config.json";
-        private const string WindowLeftKey = "TagPlacementWindow.Left";
-        private const string WindowTopKey = "TagPlacementWindow.Top";
-        private const string WindowWidthKey = "TagPlacementWindow.Width";
-        private const string WindowHeightKey = "TagPlacementWindow.Height";
         private const string SelectedCategoryKey = "TagPlacementWindow.SelectedCategoryId";
+        private const string CardTagSelectionExpandedKey = "TagPlacementWindow.CardTagSelectionExpanded";
+        private const string CardDirectionTagOverrideExpandedKey = "TagPlacementWindow.CardDirectionTagOverrideExpanded";
+        private const string CardLeaderExpandedKey = "TagPlacementWindow.CardLeaderExpanded";
+        private const string CardOrientationExpandedKey = "TagPlacementWindow.CardOrientationExpanded";
+        private const string CardPlacementOptionsExpandedKey = "TagPlacementWindow.CardPlacementOptionsExpanded";
+        private const string CardCollisionDetectionExpandedKey = "TagPlacementWindow.CardCollisionDetectionExpanded";
+        private const string CardRetagNormalizeExpandedKey = "TagPlacementWindow.CardRetagNormalizeExpanded";
         private const string LeaderLengthKey = "TagPlacementWindow.LeaderLength";
         private const string AngleKey = "TagPlacementWindow.Angle";
         private const string PlacementDirectionKey = "TagPlacementWindow.PlacementDirection";
@@ -33,9 +37,10 @@ namespace SmartTags.UI
         private const string MinimumOffsetKey = "TagPlacementWindow.MinimumOffset";
         private const string RetagExecutionModeKey = "TagPlacementWindow.RetagExecutionMode";
         private const string DirectionKeywordKey = "TagPlacementWindow.DirectionKeyword";
+        private const string WindowLeftKey = "TagPlacementWindow.WindowLeft";
+        private const string WindowTopKey = "TagPlacementWindow.WindowTop";
 
         private readonly UIApplication _uiApplication;
-        private readonly WindowResizer _windowResizer;
         private readonly Dictionary<ElementId, List<TagTypeOption>> _tagTypesByCategory = new Dictionary<ElementId, List<TagTypeOption>>();
         private bool _isDarkMode = true;
         private ResourceDictionary _currentThemeDictionary;
@@ -67,11 +72,7 @@ namespace SmartTags.UI
             InitializeComponent();
 
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
-            _windowResizer = new WindowResizer(this);
             Closed += TagPlacementWindow_Closed;
-
-            MouseMove += Window_MouseMove;
-            MouseLeftButtonUp += Window_MouseLeftButtonUp;
 
             DataContext = this;
 
@@ -88,18 +89,25 @@ namespace SmartTags.UI
             _activeSelectionExternalEvent = ExternalEvent.Create(_activeSelectionHandler);
 
             LoadThemeState();
-            LoadWindowState();
             LoadLeaderSettings();
             LoadPlacementDirection();
             LoadCollisionSettings();
             LoadRetagExecutionMode();
             LoadDirectionKeyword();
+            LoadCardStates();
+            LoadWindowPosition();
 
             InitializeLeaderOptions();
             InitializeOrientationOptions();
             LoadTagOptions(app.ActiveUIDocument?.Document);
             UpdateLeaderInputs();
             AutoApplyDirectionTagTypes();
+
+            // Show window after initialization to avoid visible animation artifacts
+            Loaded += (s, e) =>
+            {
+                Dispatcher.BeginInvoke(new Action(() => { Opacity = 1; }), System.Windows.Threading.DispatcherPriority.Loaded);
+            };
         }
 
         private void InitializeLeaderOptions()
@@ -245,6 +253,23 @@ namespace SmartTags.UI
             }
 
             _isUpdatingPlacementDirection = false;
+        }
+
+
+        private void AnchorPoint_Checked(object sender, RoutedEventArgs e)
+        {
+            // Anchor point radio buttons handle mutual exclusivity automatically
+        }
+
+        private void CardExpander_Toggled(object sender, RoutedEventArgs e)
+        {
+            if (!IsLoaded)
+            {
+                return;
+            }
+
+            // Window auto-resizes via SizeToContent=Height
+            UpdateLayout();
         }
 
         private void SetPlacementDirection(PlacementDirection direction)
@@ -693,21 +718,6 @@ namespace SmartTags.UI
             }
         }
 
-        private void LeftEdge_MouseEnter(object sender, MouseEventArgs e) => Cursor = Cursors.SizeWE;
-        private void RightEdge_MouseEnter(object sender, MouseEventArgs e) => Cursor = Cursors.SizeWE;
-        private void BottomEdge_MouseEnter(object sender, MouseEventArgs e) => Cursor = Cursors.SizeNS;
-        private void Edge_MouseLeave(object sender, MouseEventArgs e) => Cursor = Cursors.Arrow;
-        private void BottomLeftCorner_MouseEnter(object sender, MouseEventArgs e) => Cursor = Cursors.SizeNESW;
-        private void BottomRightCorner_MouseEnter(object sender, MouseEventArgs e) => Cursor = Cursors.SizeNWSE;
-
-        private void Window_MouseMove(object sender, MouseEventArgs e) => _windowResizer.ResizeWindow(e);
-        private void Window_MouseLeftButtonUp(object sender, MouseButtonEventArgs e) => _windowResizer.StopResizing();
-        private void LeftEdge_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => _windowResizer.StartResizing(e, ResizeDirection.Left);
-        private void RightEdge_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => _windowResizer.StartResizing(e, ResizeDirection.Right);
-        private void BottomEdge_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => _windowResizer.StartResizing(e, ResizeDirection.Bottom);
-        private void BottomLeftCorner_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => _windowResizer.StartResizing(e, ResizeDirection.BottomLeft);
-        private void BottomRightCorner_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => _windowResizer.StartResizing(e, ResizeDirection.BottomRight);
-
         private void TagPlacementWindow_Closed(object sender, EventArgs e)
         {
             SaveSelectedCategory();
@@ -715,66 +725,64 @@ namespace SmartTags.UI
             SavePlacementDirection();
             SaveCollisionSettings();
             SaveRetagExecutionMode();
-            SaveWindowState();
+            SaveCardStates();
+            SaveWindowPosition();
         }
 
-        private void LoadWindowState()
+        private void LoadCardStates()
         {
+            if (TagSelectionExpander == null)
+            {
+                return;
+            }
+
+            var config = LoadConfig();
+
+            if (TryGetBool(config, CardTagSelectionExpandedKey, out var tagSelectionExpanded))
+            {
+                TagSelectionExpander.IsExpanded = tagSelectionExpanded;
+            }
+
+            if (TryGetBool(config, CardDirectionTagOverrideExpandedKey, out var directionTagOverrideExpanded))
+            {
+                DirectionTagOverrideExpander.IsExpanded = directionTagOverrideExpanded;
+            }
+
+            if (TryGetBool(config, CardPlacementOptionsExpandedKey, out var placementOptionsExpanded))
+            {
+                PlacementOptionsExpander.IsExpanded = placementOptionsExpanded;
+            }
+
+            if (TryGetBool(config, CardCollisionDetectionExpandedKey, out var collisionDetectionExpanded))
+            {
+                CollisionDetectionExpander.IsExpanded = collisionDetectionExpanded;
+            }
+
+            if (TryGetBool(config, CardRetagNormalizeExpandedKey, out var retagNormalizeExpanded))
+            {
+                RetagNormalizeExpander.IsExpanded = retagNormalizeExpanded;
+            }
+        }
+
+        private void SaveCardStates()
+        {
+            if (TagSelectionExpander == null)
+            {
+                return;
+            }
+
             try
             {
                 var config = LoadConfig();
-                bool hasLeft = TryGetDouble(config, WindowLeftKey, out var left);
-                bool hasTop = TryGetDouble(config, WindowTopKey, out var top);
-                bool hasWidth = TryGetDouble(config, WindowWidthKey, out var width);
-                bool hasHeight = TryGetDouble(config, WindowHeightKey, out var height);
-
-                bool hasSize = hasWidth && hasHeight && width > 0 && height > 0;
-                bool hasPos = hasLeft && hasTop && !double.IsNaN(left) && !double.IsNaN(top);
-
-                if (!hasSize && !hasPos)
-                {
-                    return;
-                }
-
-                WindowStartupLocation = WindowStartupLocation.Manual;
-
-                if (hasSize)
-                {
-                    Width = Math.Max(MinWidth, width);
-                    Height = Math.Max(MinHeight, height);
-                }
-
-                if (hasPos)
-                {
-                    Left = left;
-                    Top = top;
-                }
+                config[CardTagSelectionExpandedKey] = TagSelectionExpander.IsExpanded;
+                config[CardDirectionTagOverrideExpandedKey] = DirectionTagOverrideExpander.IsExpanded;
+                config[CardPlacementOptionsExpandedKey] = PlacementOptionsExpander.IsExpanded;
+                config[CardCollisionDetectionExpandedKey] = CollisionDetectionExpander.IsExpanded;
+                config[CardRetagNormalizeExpandedKey] = RetagNormalizeExpander.IsExpanded;
+                SaveConfig(config);
             }
             catch (Exception)
             {
-            }
-        }
-
-        private void SaveWindowState()
-        {
-            try
-            {
-                var config = LoadConfig();
-                var bounds = WindowState == WindowState.Normal
-                    ? new Rect(Left, Top, Width, Height)
-                    : RestoreBounds;
-
-                config[WindowLeftKey] = bounds.Left;
-                config[WindowTopKey] = bounds.Top;
-                config[WindowWidthKey] = bounds.Width;
-                config[WindowHeightKey] = bounds.Height;
-
-                SaveConfig(config);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Failed to save window state: {ex.Message}", "Save Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -1879,6 +1887,48 @@ namespace SmartTags.UI
             public bool IsAttachedEnd { get; }
 
             public override string ToString() => Name;
+        }
+
+        private void LoadWindowPosition()
+        {
+            try
+            {
+                var config = LoadConfig();
+                
+                if (TryGetDouble(config, WindowLeftKey, out var left) && 
+                    TryGetDouble(config, WindowTopKey, out var top))
+                {
+                    // Validate position is within screen bounds
+                    var screenWidth = SystemParameters.VirtualScreenWidth;
+                    var screenHeight = SystemParameters.VirtualScreenHeight;
+                    
+                    if (left >= 0 && left < screenWidth - 100 && 
+                        top >= 0 && top < screenHeight - 100)
+                    {
+                        WindowStartupLocation = WindowStartupLocation.Manual;
+                        Left = left;
+                        Top = top;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // If loading fails, keep default CenterScreen
+            }
+        }
+
+        private void SaveWindowPosition()
+        {
+            try
+            {
+                var config = LoadConfig();
+                config[WindowLeftKey] = Left;
+                config[WindowTopKey] = Top;
+                SaveConfig(config);
+            }
+            catch (Exception)
+            {
+            }
         }
     }
 }

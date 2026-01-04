@@ -11,12 +11,14 @@ namespace SmartTags.Services
     {
         public PlacementDirection Direction { get; set; } = PlacementDirection.Right;
         public bool DetectElementRotation { get; set; }
+        public AnchorPoint AnchorPoint { get; set; } = AnchorPoint.Center;
         public bool HasLeader { get; set; }
         public double AttachedLength { get; set; }
         public double FreeLength { get; set; }
         public TagOrientation Orientation { get; set; } = TagOrientation.Horizontal;
         public double Angle { get; set; }
         public bool EnableCollisionDetection { get; set; }
+        public LeaderEndCondition LeaderEndCondition { get; set; } = LeaderEndCondition.Attached;
         public double CollisionGapMillimeters { get; set; } = 1.0;
         public double MinimumOffsetMillimeters { get; set; } = 300.0;
 
@@ -32,13 +34,6 @@ namespace SmartTags.Services
                 return proposals;
             }
 
-            TagCollisionDetector collisionDetector = null;
-            if (EnableCollisionDetection)
-            {
-                collisionDetector = new TagCollisionDetector(view, CollisionGapMillimeters);
-                collisionDetector.CollectObstacles(doc);
-            }
-
             var viewDirection = view.ViewDirection;
             var viewAxis = viewDirection != null && viewDirection.GetLength() > 1e-9
                 ? viewDirection.Normalize()
@@ -47,10 +42,59 @@ namespace SmartTags.Services
             var attachedLength = AttachedLength * scaleFactor;
             var freeLength = FreeLength * scaleFactor;
 
-            foreach (var tag in tags)
+            // Sort tags by distance from their host elements (farthest first)
+            // This ensures that when tags collide with each other, the farthest one moves first
+            var sortedTags = tags.OrderByDescending(tag =>
             {
                 try
                 {
+#if NET8_0_OR_GREATER
+                    var taggedIds = tag.GetTaggedElementIds();
+                    if (taggedIds == null || taggedIds.Count == 0) return 0.0;
+                    var elementId = taggedIds.FirstOrDefault()?.HostElementId;
+#else
+                    var references = tag.GetTaggedReferences();
+                    if (references == null || references.Count == 0) return 0.0;
+                    var elementId = references[0].ElementId;
+#endif
+                    if (elementId == null || elementId == ElementId.InvalidElementId) return 0.0;
+
+                    var element = doc.GetElement(elementId);
+                    if (element == null) return 0.0;
+
+                    if (!AnchorPointService.TryGetAnchorPoint(element, view, AnchorPoint, out var anchor))
+                        return 0.0;
+
+                    var tagHead = tag.TagHeadPosition;
+                    if (tagHead == null) return 0.0;
+
+                    return (tagHead - anchor).GetLength();
+                }
+                catch
+                {
+                    return 0.0;
+                }
+            }).ToList();
+
+            // Track tags that have already been processed and will move
+            // This prevents closer tags from moving when farther tags have already been flagged to move
+            var processedTagsWithMovement = new HashSet<ElementId>();
+
+            foreach (var tag in sortedTags)
+            {
+                try
+                {
+                    // Create fresh collision detector for each tag
+                    // Exclude this tag AND any tags that have already been processed with movement
+                    // This way, if a farther tag is moving, closer tags won't see it as an obstacle
+                    TagCollisionDetector collisionDetector = null;
+                    if (EnableCollisionDetection)
+                    {
+                        collisionDetector = new TagCollisionDetector(view, CollisionGapMillimeters);
+                        var excludeTags = new HashSet<ElementId>(processedTagsWithMovement) { tag.Id };
+                        collisionDetector.CollectObstaclesExcludingTags(doc, excludeTags);
+                    }
+
                     var proposal = ComputeSingleAdjustment(
                         doc,
                         view,
@@ -64,6 +108,8 @@ namespace SmartTags.Services
                     if (proposal != null && proposal.IsSignificantChange())
                     {
                         proposals.Add(proposal);
+                        // Track that this tag will move, so subsequent tags don't consider it an obstacle
+                        processedTagsWithMovement.Add(tag.Id);
                     }
                 }
                 catch
@@ -118,7 +164,7 @@ namespace SmartTags.Services
                 return null;
             }
 
-            if (!TryGetAnchorPoint(element, view, out var anchor))
+            if (!AnchorPointService.TryGetAnchorPoint(element, view, AnchorPoint, out var anchor))
             {
                 return null;
             }
@@ -148,10 +194,25 @@ namespace SmartTags.Services
                 head = anchor + offsetDirection.Multiply(freeLength);
             }
 
+            // Check if current tag position has a collision
+            // Tags are processed farthest-from-host first, so if tags collide with each other,
+            // the farther one will be moved first
+            bool hasCurrentCollision = false;
             if (collisionDetector != null)
             {
-                bool foundValidPosition;
-                head = collisionDetector.FindValidPosition(anchor, head, out foundValidPosition);
+                hasCurrentCollision = collisionDetector.HasCollisionAtPosition(oldState.TagHeadPosition);
+
+                // Only reposition if there's a collision at current position
+                if (hasCurrentCollision)
+                {
+                    bool foundValidPosition;
+                    head = collisionDetector.FindValidPosition(anchor, head, out foundValidPosition);
+                }
+                else
+                {
+                    // No collision - keep tag where it is
+                    head = oldState.TagHeadPosition;
+                }
             }
 
             var newState = new TagStateSnapshot
@@ -159,45 +220,11 @@ namespace SmartTags.Services
                 TagHeadPosition = head,
                 HasLeader = HasLeader,
                 Orientation = Orientation,
-                LeaderEndCondition = oldState.LeaderEndCondition
+                LeaderEndCondition = HasLeader ? LeaderEndCondition : oldState.LeaderEndCondition
             };
 
             var reason = "Applying current SmartTags settings";
             return new TagAdjustmentProposal(tag.Id, referencedElementId, oldState, newState, reason);
-        }
-
-        private static bool TryGetAnchorPoint(Element element, View view, out XYZ anchor)
-        {
-            anchor = null;
-            if (element == null || view == null)
-            {
-                return false;
-            }
-
-            var bbox = element.get_BoundingBox(view);
-            if (bbox != null)
-            {
-                anchor = (bbox.Min + bbox.Max) * 0.5;
-                return true;
-            }
-
-            if (element.Location is LocationPoint point)
-            {
-                anchor = point.Point;
-                return true;
-            }
-
-            if (element.Location is LocationCurve curve)
-            {
-                var c = curve.Curve;
-                if (c != null)
-                {
-                    anchor = (c.GetEndPoint(0) + c.GetEndPoint(1)) * 0.5;
-                    return true;
-                }
-            }
-
-            return false;
         }
 
         private static XYZ RotateVectorAroundAxis(XYZ vector, XYZ axis, double angle)

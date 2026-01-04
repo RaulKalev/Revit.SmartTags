@@ -13,7 +13,7 @@ namespace SmartTags
         private bool _isResizing;
 
         private const double MIN_WIDTH = 500;
-        private const double MIN_HEIGHT = 400;
+        private const double MIN_HEIGHT = 1620;
         public UIElement IgnoreElement { get; set; } // set this from MainWindow
 
         public WindowResizer(Window window)

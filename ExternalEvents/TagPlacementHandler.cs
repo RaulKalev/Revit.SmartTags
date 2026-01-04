@@ -19,11 +19,13 @@ namespace SmartTags.ExternalEvents
         public double Angle { get; set; }
         public PlacementDirection Direction { get; set; } = PlacementDirection.Right;
         public bool DetectElementRotation { get; set; }
+        public AnchorPoint AnchorPoint { get; set; } = AnchorPoint.Center;
         public bool UseSelection { get; set; }
         public IList<ElementId> TargetElementIds { get; set; }
         public bool EnableCollisionDetection { get; set; }
         public double CollisionGapMillimeters { get; set; } = 1.0;
         public double MinimumOffsetMillimeters { get; set; } = 300.0;
+        public LeaderEndCondition LeaderEndCondition { get; set; } = LeaderEndCondition.Attached;
 
         public void Execute(UIApplication app)
         {
@@ -99,7 +101,7 @@ namespace SmartTags.ExternalEvents
                 int collisionCount = 0;
                 foreach (var element in elements)
                 {
-                    if (!TryGetAnchorPoint(element, view, out var anchor))
+                    if (!AnchorPointService.TryGetAnchorPoint(element, view, AnchorPoint, out var anchor))
                     {
                         continue;
                     }
@@ -190,6 +192,12 @@ namespace SmartTags.ExternalEvents
                         if (shouldDisableLeaderAfterCreation)
                         {
                             tag.HasLeader = false;
+                        }
+
+                        // Set leader end condition if tag has a leader
+                        if (HasLeader)
+                        {
+                            tag.LeaderEndCondition = LeaderEndCondition;
                         }
                     }
                     catch
@@ -319,40 +327,6 @@ namespace SmartTags.ExternalEvents
         public string GetName()
         {
             return "SmartTags Tag Placement";
-        }
-
-        private static bool TryGetAnchorPoint(Element element, View view, out XYZ anchor)
-        {
-            anchor = null;
-            if (element == null || view == null)
-            {
-                return false;
-            }
-
-            var bbox = element.get_BoundingBox(view);
-            if (bbox != null)
-            {
-                anchor = (bbox.Min + bbox.Max) * 0.5;
-                return true;
-            }
-
-            if (element.Location is LocationPoint point)
-            {
-                anchor = point.Point;
-                return true;
-            }
-
-            if (element.Location is LocationCurve curve)
-            {
-                var c = curve.Curve;
-                if (c != null)
-                {
-                    anchor = (c.GetEndPoint(0) + c.GetEndPoint(1)) * 0.5;
-                    return true;
-                }
-            }
-
-            return false;
         }
 
         private static IndependentTag CreateTag(Document doc, View view, Reference reference, XYZ head, TagOrientation orientation, bool hasLeader)
