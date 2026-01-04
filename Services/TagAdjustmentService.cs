@@ -180,18 +180,17 @@ namespace SmartTags.Services
             var head = anchor;
             var leaderOffset = Math.Max(0, attachedLength + freeLength);
 
-            if (HasLeader && leaderOffset > 0)
+            // Use leader offset for placement regardless of HasLeader state
+            // HasLeader only controls whether the visual leader line is shown
+            if (leaderOffset > 0)
             {
                 head = anchor + offsetDirection.Multiply(leaderOffset);
             }
-            else if (!HasLeader)
+            else
             {
+                // No leader length specified - use minimum offset
                 var minimumOffset = MinimumOffsetMillimeters / 304.8;
                 head = anchor + offsetDirection.Multiply(minimumOffset);
-            }
-            else if (freeLength > 0)
-            {
-                head = anchor + offsetDirection.Multiply(freeLength);
             }
 
             // Check if current tag position has a collision

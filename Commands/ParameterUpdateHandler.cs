@@ -39,7 +39,9 @@ namespace SmartTags.Commands
                             id = new ElementId(idVal);
 #else
                         if (int.TryParse(idStr, out int idVal))
+#pragma warning disable CS0618
                             id = new ElementId(idVal);
+#pragma warning restore CS0618
 #endif
 
                         if (id == ElementId.InvalidElementId) continue;

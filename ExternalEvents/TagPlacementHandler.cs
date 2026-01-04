@@ -95,6 +95,9 @@ namespace SmartTags.ExternalEvents
                 if (EnableCollisionDetection)
                 {
                     collisionDetector = new TagCollisionDetector(view, CollisionGapMillimeters);
+                    // Collect obstacles once before processing elements
+                    // Newly created tags will be added as we go
+                    collisionDetector.CollectObstacles(doc, null);
                 }
 
                 int taggedCount = 0;
@@ -104,12 +107,6 @@ namespace SmartTags.ExternalEvents
                     if (!AnchorPointService.TryGetAnchorPoint(element, view, AnchorPoint, out var anchor))
                     {
                         continue;
-                    }
-
-                    // Update obstacles for this specific element (excludes current element but keeps track of newly created tags)
-                    if (collisionDetector != null)
-                    {
-                        collisionDetector.CollectObstacles(doc, element.Id);
                     }
 
                     var totalAngle = Angle;
@@ -143,34 +140,25 @@ namespace SmartTags.ExternalEvents
                     }
                     var safeMinimumOffset = Math.Max(elementRadius + 0.5, MinimumOffsetMillimeters / 304.8);
 
-                    if (HasLeader && leaderOffset > 0)
+                    // Use leader offset for placement regardless of HasLeader state
+                    // HasLeader only controls whether the visual leader line is shown
+                    if (leaderOffset > 0)
                     {
-                        // Leader enabled with length specified
                         head = anchor + offsetDirection.Multiply(leaderOffset);
                     }
-                    else if (!HasLeader)
+                    else
                     {
-                        // Leader not enabled - apply safe offset based on element size
+                        // No leader length specified - use safe minimum offset
                         head = anchor + offsetDirection.Multiply(safeMinimumOffset);
-                    }
-                    else if (freeLength > 0)
-                    {
-                        // Leader enabled but length is 0 - use free length if available
-                        head = anchor + offsetDirection.Multiply(freeLength);
                     }
 
                     // Adjust position for collision detection if enabled
+                    bool initialPositionValid = true;
                     if (collisionDetector != null)
                     {
-                        bool foundValidPosition;
-                        head = collisionDetector.FindValidPosition(anchor, head, out foundValidPosition);
-
-                        if (!foundValidPosition)
-                        {
-                            collisionCount++;
-                        }
+                        head = collisionDetector.FindValidPosition(anchor, head, out initialPositionValid);
                     }
-
+                    
                     var reference = new Reference(element);
 
                     // When leader is disabled, Revit places tag at element location regardless of head position
@@ -188,13 +176,7 @@ namespace SmartTags.ExternalEvents
                     {
                         tag.TagHeadPosition = head;
 
-                        // Disable leader after positioning if it wasn't originally enabled
-                        if (shouldDisableLeaderAfterCreation)
-                        {
-                            tag.HasLeader = false;
-                        }
-
-                        // Set leader end condition if tag has a leader
+                        // Set leader end condition if tag has a leader (before disabling it)
                         if (HasLeader)
                         {
                             tag.LeaderEndCondition = LeaderEndCondition;
@@ -282,8 +264,17 @@ namespace SmartTags.ExternalEvents
                             else if (!foundValidPosition)
                             {
                                 // No valid position found even with actual size
-                                collisionCount++;
+                                // Only count as collision if we haven't already counted this tag
+                                if (initialPositionValid)
+                                {
+                                    collisionCount++;
+                                }
                             }
+                        }
+                        else if (!initialPositionValid)
+                        {
+                            // Initial position had collision but post-validation shows it's actually okay
+                            // This can happen if estimated size was larger than actual size
                         }
 
                         // Add tag with actual bounds to collision detector for subsequent tags
@@ -297,6 +288,18 @@ namespace SmartTags.ExternalEvents
                         {
                             var axis = Line.CreateBound(head, head + viewDirection);
                             ElementTransformUtils.RotateElement(doc, tag.Id, axis, rotationAngle);
+                        }
+                        catch
+                        {
+                        }
+                    }
+
+                    // Disable leader AFTER all positioning/rotation complete to prevent Revit from resetting position
+                    if (shouldDisableLeaderAfterCreation)
+                    {
+                        try
+                        {
+                            tag.HasLeader = false;
                         }
                         catch
                         {
@@ -319,6 +322,7 @@ namespace SmartTags.ExternalEvents
                     {
                         message += $"\n\nWarning: {collisionCount} tag(s) could not avoid collisions.";
                     }
+                    
                     TaskDialog.Show("SmartTags", message);
                 }
             }

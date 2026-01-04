@@ -52,10 +52,69 @@ namespace SmartTags.Services
 
             try
             {
-                // Single combined collection pass to reduce overhead
-                var allElements = new FilteredElementCollector(doc, _view.Id)
-                    .WhereElementIsNotElementType()
+                // Collect ONLY tags and specific model categories that would visually block tags in 2D
+                // This whitelist approach prevents 3D elements above/below view plane from causing false collisions
+                
+                // First, collect all tags (these are always relevant)
+                var tags = new FilteredElementCollector(doc, _view.Id)
+                    .OfClass(typeof(IndependentTag))
+                    .Cast<IndependentTag>()
+                    .Where(t => !t.IsHidden(_view))
+                    .Cast<Element>()
                     .ToList();
+
+                // Then collect specific model element categories that are actually visible in 2D
+                var modelElements = new FilteredElementCollector(doc, _view.Id)
+                    .WhereElementIsNotElementType()
+                    .Where(e =>
+                    {
+                        try
+                        {
+                            if (e is IndependentTag) return false; // Already collected
+                            if (e.IsHidden(_view)) return false;
+                            if (e.Category == null || !e.Category.get_Visible(_view)) return false;
+                            
+                            var catName = e.Category.Name;
+                            
+                            // WHITELIST: Only include categories that would actually block tags in 2D plan/section views
+                            // Add more categories as needed, but be conservative to avoid 3D element pollution
+                            if (catName == "Walls" ||
+                                catName == "Doors" ||
+                                catName == "Windows" ||
+                                catName == "Furniture" ||
+                                catName == "Ducts" ||
+                                catName == "Pipes" ||
+                                catName == "Conduits" ||
+                                catName == "Cable Trays" ||
+                                catName == "Structural Framing" ||
+                                catName == "Structural Columns" ||
+                                catName == "Columns" ||
+                                catName == "Floors" ||
+                                catName == "Roofs" ||
+                                catName == "Ceilings" ||
+                                catName == "Detail Items" ||
+                                catName == "Generic Models" ||
+                                catName == "Casework" ||
+                                catName == "Plumbing Fixtures" ||
+                                catName == "Lighting Fixtures" ||
+                                catName == "Electrical Equipment" ||
+                                catName == "Mechanical Equipment" ||
+                                catName == "Specialty Equipment")
+                            {
+                                var bbox = e.get_BoundingBox(_view);
+                                return bbox != null;
+                            }
+                            
+                            return false;
+                        }
+                        catch
+                        {
+                            return false;
+                        }
+                    })
+                    .ToList();
+
+                var allElements = tags.Concat(modelElements).ToList();
 
                 foreach (var element in allElements)
                 {
@@ -198,6 +257,11 @@ namespace SmartTags.Services
                 {
                     _newlyCreatedTags.Add(bounds);
                     _newTagsIndex.AddObstacle(bounds);
+                    System.Diagnostics.Debug.WriteLine($"[Collision] Added new tag to tracker. Total new tags: {_newlyCreatedTags.Count}");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Collision] WARNING: Could not get bounds for new tag!");
                 }
             }
             catch
@@ -399,17 +463,20 @@ namespace SmartTags.Services
                 _collisionChecksPerformed++;
                 if (tagBounds.Overlaps(obstacle, _gapInFeet))
                 {
+                    System.Diagnostics.Debug.WriteLine($"[Collision] Found overlap with obstacle at estimated position");
                     return true;
                 }
             }
 
             // Check against newly created tags (usually small list, spatial index optional)
             var nearbyNewTags = _newTagsIndex.GetNearbyObstacles(tagBounds);
+            System.Diagnostics.Debug.WriteLine($"[Collision] Checking {nearbyNewTags.Count} nearby new tags");
             foreach (var obstacle in nearbyNewTags)
             {
                 _collisionChecksPerformed++;
                 if (tagBounds.Overlaps(obstacle, _gapInFeet))
                 {
+                    System.Diagnostics.Debug.WriteLine($"[Collision] Found overlap with NEW TAG at estimated position");
                     return true;
                 }
             }
@@ -662,6 +729,11 @@ namespace SmartTags.Services
         {
             int totalObstacles = _obstacles.Count + _newlyCreatedTags.Count;
             return $"Collision checks: {_collisionChecksPerformed}, Spatial filtered: {_spatialFilteredChecks}, Total obstacles: {totalObstacles}";
+        }
+
+        public int GetNewTagCount()
+        {
+            return _newlyCreatedTags.Count;
         }
 
         public class ObstacleBounds

@@ -127,17 +127,16 @@ namespace SmartTags.ExternalEvents
                     }
                     var safeMinimumOffset = Math.Max(elementRadius + 0.5, MinimumOffsetMillimeters / 304.8);
 
-                    if (HasLeader && leaderOffset > 0)
+                    // Use leader offset for placement regardless of HasLeader state
+                    // HasLeader only controls whether the visual leader line is shown
+                    if (leaderOffset > 0)
                     {
                         head = anchor + offsetDirection.Multiply(leaderOffset);
                     }
-                    else if (!HasLeader)
+                    else
                     {
+                        // No leader length specified - use safe minimum offset
                         head = anchor + offsetDirection.Multiply(safeMinimumOffset);
-                    }
-                    else if (freeLength > 0)
-                    {
-                        head = anchor + offsetDirection.Multiply(freeLength);
                     }
 
                     TagCollisionDetector collisionDetector = null;
@@ -165,12 +164,7 @@ namespace SmartTags.ExternalEvents
                     {
                         tag.TagHeadPosition = head;
 
-                        if (shouldDisableLeaderAfterCreation)
-                        {
-                            tag.HasLeader = false;
-                        }
-
-                        // Set leader end condition if tag has a leader
+                        // Set leader end condition if tag has a leader (before disabling it)
                         if (HasLeader)
                         {
                             tag.LeaderEndCondition = LeaderEndCondition;
@@ -240,6 +234,18 @@ namespace SmartTags.ExternalEvents
                             var viewDirection = view.ViewDirection;
                             var axis = Line.CreateBound(head, head + viewDirection);
                             ElementTransformUtils.RotateElement(doc, tag.Id, axis, rotationAngle);
+                        }
+                        catch
+                        {
+                        }
+                    }
+
+                    // Disable leader AFTER all positioning/rotation complete to prevent Revit from resetting position
+                    if (shouldDisableLeaderAfterCreation)
+                    {
+                        try
+                        {
+                            tag.HasLeader = false;
                         }
                         catch
                         {

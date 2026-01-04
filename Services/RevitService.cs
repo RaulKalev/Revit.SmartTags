@@ -84,7 +84,9 @@ namespace SmartTags.Services
 #if NET8_0_OR_GREATER
                 rowData.Add(el.Id.Value.ToString());
 #else
+#pragma warning disable CS0618
                 rowData.Add(el.Id.IntegerValue.ToString());
+#pragma warning restore CS0618
 #endif
                 
                 // Add TypeName
@@ -144,7 +146,9 @@ namespace SmartTags.Services
 #if NET8_0_OR_GREATER
             long idValue = parameterId.Value;
 #else
+#pragma warning disable CS0618
             int idValue = parameterId.IntegerValue;
+#pragma warning restore CS0618
 #endif
 
             // 1. Try BuiltInParameter on Instance

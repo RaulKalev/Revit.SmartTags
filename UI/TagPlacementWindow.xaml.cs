@@ -202,10 +202,10 @@ namespace SmartTags.UI
             }
 
             var enabled = LeaderLineCheckBox.IsChecked == true;
-            LeaderLengthTextBox.IsEnabled = enabled;
+            // Leader length text box always enabled - value used for placement offset even when leader disabled
             LeaderTypeComboBox.IsEnabled = enabled;
             var opacity = enabled ? 1.0 : 0.5;
-            LeaderLengthTextBox.Opacity = opacity;
+            LeaderTypeComboBox.Opacity = opacity;
         }
 
         private void Background_PreviewMouseDown(object sender, MouseButtonEventArgs e)
@@ -342,13 +342,12 @@ namespace SmartTags.UI
             double leaderLength = 0;
             double attachedLength = 0;
             double freeLength = 0;
-            if (hasLeader)
+            
+            // Always parse leader length even if leader is disabled - we still use it for placement offset
+            if (!TryParseLength(LeaderLengthTextBox?.Text, out leaderLength, out var lengthError))
             {
-                if (!TryParseLength(LeaderLengthTextBox?.Text, out leaderLength, out var lengthError))
-                {
-                    MessageBox.Show(lengthError, "SmartTags", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return false;
-                }
+                MessageBox.Show(lengthError, "SmartTags", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
             }
 
             double angleRadians;
@@ -369,11 +368,10 @@ namespace SmartTags.UI
 
             var leaderType = LeaderTypeComboBox?.SelectedItem as LeaderTypeOption;
             var applyToAttached = leaderType == null || leaderType.IsAttachedEnd;
-            if (hasLeader)
-            {
-                attachedLength = applyToAttached ? leaderLength : 0;
-                freeLength = applyToAttached ? 0 : leaderLength;
-            }
+            
+            // Always apply leader length for placement offset, regardless of HasLeader state
+            attachedLength = applyToAttached ? leaderLength : 0;
+            freeLength = applyToAttached ? 0 : leaderLength;
 
             _tagPlacementHandler.AttachedLength = attachedLength;
             _tagPlacementHandler.FreeLength = freeLength;
@@ -625,7 +623,9 @@ namespace SmartTags.UI
 #if NET8_0_OR_GREATER
             return id.Value;
 #else
+#pragma warning disable CS0618
             return id.IntegerValue;
+#pragma warning restore CS0618
 #endif
         }
 
@@ -1258,20 +1258,17 @@ namespace SmartTags.UI
             }
             adjustmentService.Angle = angleRadians;
 
-            var hasLeader = LeaderLineCheckBox?.IsChecked == true;
-            if (hasLeader)
+            // Always parse and apply leader length for placement offset, regardless of HasLeader state
+            if (!TryParseLength(LeaderLengthTextBox?.Text, out var leaderLength, out var lengthError))
             {
-                if (!TryParseLength(LeaderLengthTextBox?.Text, out var leaderLength, out var lengthError))
-                {
-                    MessageBox.Show(lengthError, "SmartTags", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
-                }
-
-                var leaderType = LeaderTypeComboBox?.SelectedItem as LeaderTypeOption;
-                var applyToAttached = leaderType == null || leaderType.IsAttachedEnd;
-                adjustmentService.AttachedLength = applyToAttached ? leaderLength : 0;
-                adjustmentService.FreeLength = applyToAttached ? 0 : leaderLength;
+                MessageBox.Show(lengthError, "SmartTags", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
             }
+
+            var leaderType = LeaderTypeComboBox?.SelectedItem as LeaderTypeOption;
+            var applyToAttached = leaderType == null || leaderType.IsAttachedEnd;
+            adjustmentService.AttachedLength = applyToAttached ? leaderLength : 0;
+            adjustmentService.FreeLength = applyToAttached ? 0 : leaderLength;
 
             if (adjustmentService.EnableCollisionDetection)
             {
@@ -1679,16 +1676,13 @@ namespace SmartTags.UI
             TryParseAngle(AngleTextBox?.Text, out var angleRadians, out var _);
             _activeSelectionHandler.Angle = angleRadians;
 
-            var hasLeader = LeaderLineCheckBox?.IsChecked == true;
-            if (hasLeader)
+            // Always parse and apply leader length for placement offset, regardless of HasLeader state
+            if (TryParseLength(LeaderLengthTextBox?.Text, out var leaderLength, out var _))
             {
-                if (TryParseLength(LeaderLengthTextBox?.Text, out var leaderLength, out var _))
-                {
-                    var leaderType = LeaderTypeComboBox?.SelectedItem as LeaderTypeOption;
-                    var applyToAttached = leaderType == null || leaderType.IsAttachedEnd;
-                    _activeSelectionHandler.AttachedLength = applyToAttached ? leaderLength : 0;
-                    _activeSelectionHandler.FreeLength = applyToAttached ? 0 : leaderLength;
-                }
+                var leaderType = LeaderTypeComboBox?.SelectedItem as LeaderTypeOption;
+                var applyToAttached = leaderType == null || leaderType.IsAttachedEnd;
+                _activeSelectionHandler.AttachedLength = applyToAttached ? leaderLength : 0;
+                _activeSelectionHandler.FreeLength = applyToAttached ? 0 : leaderLength;
             }
 
             _activeSelectionHandler.EnableCollisionDetection = CollisionDetectionCheckBox?.IsChecked == true;

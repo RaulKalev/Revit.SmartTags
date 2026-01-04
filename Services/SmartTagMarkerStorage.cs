@@ -170,7 +170,9 @@ namespace SmartTags.Services
 #if NET8_0_OR_GREATER
             return id.Value;
 #else
+#pragma warning disable CS0618
             return id.IntegerValue;
+#pragma warning restore CS0618
 #endif
         }
 
@@ -179,7 +181,9 @@ namespace SmartTags.Services
 #if NET8_0_OR_GREATER
             return new ElementId(value);
 #else
+#pragma warning disable CS0618
             return new ElementId((int)value);
+#pragma warning restore CS0618
 #endif
         }
     }
