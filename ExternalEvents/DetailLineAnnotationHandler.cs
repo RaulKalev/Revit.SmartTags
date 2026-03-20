@@ -133,13 +133,9 @@ namespace SmartTags.ExternalEvents
 
                 LastPlacedCount = placedCount;
 
-                if (placedCount == 0)
+                if (placedCount == 0 && !UseSelection)
                 {
                     TaskDialog.Show("SmartTags", "No detail lines were found in the active view.");
-                }
-                else
-                {
-                    TaskDialog.Show("SmartTags", $"Placed {placedCount} detail item(s).");
                 }
             }
         }
