@@ -230,6 +230,9 @@
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
                                     </Grid.RowDefinitions>
 
                                     <TextBlock
@@ -249,6 +252,7 @@
                                         Style="{StaticResource DarkThemeComboBox}" />
 
                                     <TextBlock
+                                        x:Name="TagTypeLabelText"
                                         Grid.Row="1"
                                         Grid.Column="0"
                                         Margin="0,0,10,8"
@@ -271,6 +275,94 @@
                                         Content="Include elements from links"
                                         IsChecked="False"
                                         Style="{StaticResource CustomCheckboxStyle}">
+                                        <CheckBox.LayoutTransform>
+                                            <ScaleTransform ScaleX="0.85" ScaleY="0.85" />
+                                        </CheckBox.LayoutTransform>
+                                    </CheckBox>
+
+                                    <!--  Detail Lines rows (shown only when Detail Lines category is selected)  -->
+                                    <TextBlock
+                                        x:Name="DetailLineOffsetLabel"
+                                        Grid.Row="3"
+                                        Grid.Column="0"
+                                        Margin="0,8,10,8"
+                                        Style="{StaticResource CustomTextBlock}"
+                                        Text="Offset (mm)"
+                                        Visibility="Collapsed" />
+                                    <Grid
+                                        x:Name="DetailLineOffsetGrid"
+                                        Grid.Row="3"
+                                        Grid.Column="1"
+                                        Margin="0,8,0,8"
+                                        Visibility="Collapsed">
+                                        <TextBox
+                                            x:Name="DetailLineOffsetTextBox"
+                                            Padding="5,0,23,0"
+                                            HorizontalAlignment="Stretch"
+                                            materialDesign:HintAssist.Hint="Offset"
+                                            Style="{StaticResource CustomTextBoxStyle}"
+                                            Text="0"
+                                            TextAlignment="Center" />
+                                        <TextBlock
+                                            Margin="0,0,8,0"
+                                            HorizontalAlignment="Right"
+                                            VerticalAlignment="Center"
+                                            Foreground="{DynamicResource ForegroundBrush}"
+                                            IsHitTestVisible="False"
+                                            Text="mm" />
+                                    </Grid>
+
+                                    <TextBlock
+                                        x:Name="DetailLineDirectionLabel"
+                                        Grid.Row="4"
+                                        Grid.Column="0"
+                                        Margin="0,0,10,8"
+                                        Style="{StaticResource CustomTextBlock}"
+                                        Text="Offset direction"
+                                        Visibility="Collapsed" />
+                                    <StackPanel
+                                        x:Name="DetailLineDirectionPanel"
+                                        Grid.Row="4"
+                                        Grid.Column="1"
+                                        Margin="0,0,0,8"
+                                        Orientation="Horizontal"
+                                        Visibility="Collapsed">
+                                        <RadioButton
+                                            x:Name="DetailLineOffsetUpRadio"
+                                            Margin="0,0,10,0"
+                                            Content="Up"
+                                            Foreground="{DynamicResource ForegroundBrush}"
+                                            GroupName="DetailLineOffsetDir" />
+                                        <RadioButton
+                                            x:Name="DetailLineOffsetDownRadio"
+                                            Margin="0,0,10,0"
+                                            Content="Down"
+                                            Foreground="{DynamicResource ForegroundBrush}"
+                                            GroupName="DetailLineOffsetDir" />
+                                        <RadioButton
+                                            x:Name="DetailLineOffsetLeftRadio"
+                                            Margin="0,0,10,0"
+                                            Content="Left"
+                                            Foreground="{DynamicResource ForegroundBrush}"
+                                            GroupName="DetailLineOffsetDir" />
+                                        <RadioButton
+                                            x:Name="DetailLineOffsetRightRadio"
+                                            Content="Right"
+                                            Foreground="{DynamicResource ForegroundBrush}"
+                                            GroupName="DetailLineOffsetDir"
+                                            IsChecked="True" />
+                                    </StackPanel>
+
+                                    <CheckBox
+                                        x:Name="DetailLineAlignToLineCheckBox"
+                                        Grid.Row="5"
+                                        Grid.Column="0"
+                                        Grid.ColumnSpan="2"
+                                        Margin="0,0,0,8"
+                                        Content="Align item to line direction"
+                                        IsChecked="False"
+                                        Style="{StaticResource CustomCheckboxStyle}"
+                                        Visibility="Collapsed">
                                         <CheckBox.LayoutTransform>
                                             <ScaleTransform ScaleX="0.85" ScaleY="0.85" />
                                         </CheckBox.LayoutTransform>

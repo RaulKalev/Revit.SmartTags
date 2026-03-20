@@ -29,6 +29,11 @@ namespace SmartTags.UI
         private const string CardPlacementOptionsExpandedKey = "TagPlacementWindow.CardPlacementOptionsExpanded";
         private const string CardCollisionDetectionExpandedKey = "TagPlacementWindow.CardCollisionDetectionExpanded";
         private const string CardRetagNormalizeExpandedKey = "TagPlacementWindow.CardRetagNormalizeExpanded";
+        private const string CardDetailLineAnnotationExpandedKey = "TagPlacementWindow.CardDetailLineAnnotationExpanded";
+        private const string DetailLineItemTypeNameKey = "DetailLine.ItemTypeName";
+        private const string DetailLineOffsetKey = "DetailLine.OffsetMillimeters";
+        private const string DetailLineDirectionKey = "DetailLine.OffsetDirection";
+        private const string DetailLineAlignKey = "DetailLine.AlignToLine";
         private const string LeaderLengthKey = "TagPlacementWindow.LeaderLength";
         private const string AngleKey = "TagPlacementWindow.Angle";
         private const string PlacementDirectionKey = "TagPlacementWindow.PlacementDirection";
@@ -53,10 +58,14 @@ namespace SmartTags.UI
         private readonly ExternalEvent _retagConfirmationExternalEvent;
         private readonly ActiveSelectionTagHandler _activeSelectionHandler;
         private readonly ExternalEvent _activeSelectionExternalEvent;
+        private readonly DetailLineAnnotationHandler _detailLineAnnotationHandler;
+        private readonly ExternalEvent _detailLineAnnotationExternalEvent;
         private bool _isUpdatingPlacementDirection;
         private bool _isUpdatingRetagMode;
         private bool _isActiveSelectionModeActive;
         private ElementId _activeSelectionViewId;
+        private bool _isDetailLineSelectionActive;
+        private ElementId _detailLineSelectionViewId;
         private bool _isLoadingPreset;
 
         public ObservableCollection<TagCategoryOption> TagCategories { get; } = new ObservableCollection<TagCategoryOption>();
@@ -91,6 +100,9 @@ namespace SmartTags.UI
             _activeSelectionHandler = new ActiveSelectionTagHandler();
             _activeSelectionExternalEvent = ExternalEvent.Create(_activeSelectionHandler);
 
+            _detailLineAnnotationHandler = new DetailLineAnnotationHandler();
+            _detailLineAnnotationExternalEvent = ExternalEvent.Create(_detailLineAnnotationHandler);
+
             LoadThemeState();
             LoadLeaderSettings();
             LoadPlacementDirection();
@@ -105,6 +117,7 @@ namespace SmartTags.UI
             InitializeLeaderOptions();
             InitializeOrientationOptions();
             LoadTagOptions(app.ActiveUIDocument?.Document);
+            LoadDetailLineSettings();
             UpdateLeaderInputs();
             AutoApplyDirectionTagTypes();
 
@@ -138,39 +151,60 @@ namespace SmartTags.UI
             TagTypes.Clear();
             _tagTypesByCategory.Clear();
 
-            if (doc == null)
+            if (doc != null)
             {
-                return;
-            }
-
-            var tagSymbols = new FilteredElementCollector(doc)
-                .OfClass(typeof(FamilySymbol))
-                .Cast<FamilySymbol>()
-                .Where(symbol => symbol.Category != null && IsTagCategory(symbol.Category))
-                .ToList();
-
-            var grouped = tagSymbols
-                .GroupBy(symbol => symbol.Category.Id)
-                .OrderBy(group => group.First().Category.Name);
-
-            foreach (var group in grouped)
-            {
-                var category = group.First().Category;
-                var elementCategory = FindTaggedCategory(doc, category.Name);
-                var displayName = elementCategory != null ? elementCategory.Name : ToElementCategoryName(category.Name);
-                var elementCategoryId = elementCategory != null ? elementCategory.Id : ElementId.InvalidElementId;
-                TagCategories.Add(new TagCategoryOption(category.Id, elementCategoryId, displayName, category.Name));
-
-                var types = group
-                    .OrderBy(symbol => symbol.Family?.Name)
-                    .ThenBy(symbol => symbol.Name)
-                    .Select(symbol => new TagTypeOption(symbol.Id, symbol.Family?.Name ?? string.Empty, symbol.Name))
+                var tagSymbols = new FilteredElementCollector(doc)
+                    .OfClass(typeof(FamilySymbol))
+                    .Cast<FamilySymbol>()
+                    .Where(symbol => symbol.Category != null && IsTagCategory(symbol.Category))
                     .ToList();
 
-                _tagTypesByCategory[category.Id] = types;
+                var grouped = tagSymbols
+                    .GroupBy(symbol => symbol.Category.Id)
+                    .OrderBy(group => group.First().Category.Name);
+
+                foreach (var group in grouped)
+                {
+                    var category = group.First().Category;
+                    var elementCategory = FindTaggedCategory(doc, category.Name);
+                    var displayName = elementCategory != null ? elementCategory.Name : ToElementCategoryName(category.Name);
+                    var elementCategoryId = elementCategory != null ? elementCategory.Id : ElementId.InvalidElementId;
+                    TagCategories.Add(new TagCategoryOption(category.Id, elementCategoryId, displayName, category.Name));
+
+                    var types = group
+                        .OrderBy(symbol => symbol.Family?.Name)
+                        .ThenBy(symbol => symbol.Name)
+                        .Select(symbol => new TagTypeOption(symbol.Id, symbol.Family?.Name ?? string.Empty, symbol.Name))
+                        .ToList();
+
+                    _tagTypesByCategory[category.Id] = types;
+                }
             }
 
+            // Always add "Detail Lines" sentinel so users can annotate detail lines via this category
+            var linesCatId = new ElementId(BuiltInCategory.OST_Lines);
+            TagCategories.Add(new TagCategoryOption(linesCatId, linesCatId, "Detail Lines", string.Empty));
+
             ApplySavedCategorySelection();
+        }
+
+        private static bool IsDetailLineCategory(TagCategoryOption option)
+        {
+            return option != null && option.DisplayName == "Detail Lines";
+        }
+
+        private void UpdateDetailLineControlsVisibility(bool isDetailLine)
+        {
+            var vis = isDetailLine ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+            if (TagTypeLabelText != null)
+                TagTypeLabelText.Text = isDetailLine ? "Detail item type" : "Tag family + type";
+            if (IncludeLinksCheckBox != null)
+                IncludeLinksCheckBox.Visibility = isDetailLine ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+            if (DetailLineOffsetLabel != null) DetailLineOffsetLabel.Visibility = vis;
+            if (DetailLineOffsetGrid != null) DetailLineOffsetGrid.Visibility = vis;
+            if (DetailLineDirectionLabel != null) DetailLineDirectionLabel.Visibility = vis;
+            if (DetailLineDirectionPanel != null) DetailLineDirectionPanel.Visibility = vis;
+            if (DetailLineAlignToLineCheckBox != null) DetailLineAlignToLineCheckBox.Visibility = vis;
         }
 
         private void CategoryComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -178,12 +212,60 @@ namespace SmartTags.UI
             var option = e.AddedItems.Count > 0 ? e.AddedItems[0] as TagCategoryOption : null;
             TagTypes.Clear();
 
-            if (option != null && _tagTypesByCategory.TryGetValue(option.TagCategoryId, out var types))
+            if (option != null)
             {
-                foreach (var type in types)
+                if (IsDetailLineCategory(option))
                 {
-                    TagTypes.Add(type);
+                    var doc = _uiApplication?.ActiveUIDocument?.Document;
+                    if (doc != null)
+                    {
+                        var symbols = new FilteredElementCollector(doc)
+                            .OfClass(typeof(FamilySymbol))
+                            .Cast<FamilySymbol>()
+                            .Where(s => s.Category != null &&
+                                        s.Category.Id == new ElementId(BuiltInCategory.OST_DetailComponents))
+                            .OrderBy(s => s.Family?.Name)
+                            .ThenBy(s => s.Name)
+                            .ToList();
+
+                        foreach (var sym in symbols)
+                            TagTypes.Add(new TagTypeOption(sym.Id, sym.Family?.Name ?? string.Empty, sym.Name));
+
+                        // Restore saved detail item type selection
+                        var config = LoadConfig();
+                        if (TryGetString(config, DetailLineItemTypeNameKey, out var savedName) && !string.IsNullOrWhiteSpace(savedName))
+                        {
+                            var match = TagTypes.FirstOrDefault(t => t.DisplayName == savedName);
+                            if (match != null)
+                            {
+                                UpdateDetailLineControlsVisibility(true);
+                                TagTypeComboBox.SelectedItem = match;
+                                return;
+                            }
+                        }
+
+                        UpdateDetailLineControlsVisibility(true);
+                    }
+                    else
+                    {
+                        UpdateDetailLineControlsVisibility(true);
+                    }
                 }
+                else if (_tagTypesByCategory.TryGetValue(option.TagCategoryId, out var types))
+                {
+                    foreach (var type in types)
+                        TagTypes.Add(type);
+
+                    UpdateDetailLineControlsVisibility(false);
+                }
+                else
+                {
+                    UpdateDetailLineControlsVisibility(false);
+                }
+            }
+            else
+            {
+                UpdateDetailLineControlsVisibility(false);
             }
 
             TagTypeComboBox.SelectedIndex = TagTypes.Count > 0 ? 0 : -1;
@@ -294,6 +376,16 @@ namespace SmartTags.UI
 
         private void TagAllButton_Click(object sender, RoutedEventArgs e)
         {
+            var categoryOption = CategoryComboBox?.SelectedItem as TagCategoryOption;
+            if (IsDetailLineCategory(categoryOption))
+            {
+                if (!ValidateDetailLineSettings()) return;
+                SaveDetailLineSettings();
+                ConfigureDetailLineHandler(null);
+                _detailLineAnnotationExternalEvent.Raise();
+                return;
+            }
+
             if (!TryConfigureTagPlacement(false))
             {
                 return;
@@ -304,6 +396,41 @@ namespace SmartTags.UI
 
         private void TagSelectedButton_Click(object sender, RoutedEventArgs e)
         {
+            var categoryOption = CategoryComboBox?.SelectedItem as TagCategoryOption;
+            if (IsDetailLineCategory(categoryOption))
+            {
+                if (!ValidateDetailLineSettings()) return;
+
+                var uiDoc = _uiApplication?.ActiveUIDocument;
+                if (uiDoc == null) return;
+
+                var doc = uiDoc.Document;
+                var selectionIds = uiDoc.Selection.GetElementIds();
+                if (selectionIds == null || selectionIds.Count == 0)
+                {
+                    MessageBox.Show("Select detail lines in the view before using this button.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                var filteredIds = new List<ElementId>();
+                foreach (var id in selectionIds)
+                {
+                    if (doc.GetElement(id) is DetailCurve)
+                        filteredIds.Add(id);
+                }
+
+                if (filteredIds.Count == 0)
+                {
+                    MessageBox.Show("No selected elements are detail lines.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                SaveDetailLineSettings();
+                ConfigureDetailLineHandler(filteredIds);
+                _detailLineAnnotationExternalEvent.Raise();
+                return;
+            }
+
             if (!TryConfigureTagPlacement(true))
             {
                 return;
@@ -1477,6 +1604,27 @@ namespace SmartTags.UI
                 return;
             }
 
+            var categoryOption = CategoryComboBox?.SelectedItem as TagCategoryOption;
+            if (IsDetailLineCategory(categoryOption))
+            {
+                if (_isDetailLineSelectionActive || _isActiveSelectionModeActive)
+                {
+                    _isDetailLineSelectionActive = false;
+                    _isActiveSelectionModeActive = false;
+                    _detailLineSelectionViewId = null;
+                    ActiveSelectionToggleButton.Content = "Select";
+                    return;
+                }
+
+                if (!ValidateDetailLineSettings()) return;
+                SaveDetailLineSettings();
+                _isDetailLineSelectionActive = true;
+                _detailLineSelectionViewId = _uiApplication?.ActiveUIDocument?.Document?.ActiveView?.Id;
+                ActiveSelectionToggleButton.Content = "Stop";
+                System.Threading.Tasks.Task.Run(() => RunDetailLineSelectionLoop());
+                return;
+            }
+
             if (_isActiveSelectionModeActive)
             {
                 _isActiveSelectionModeActive = false;
@@ -2160,10 +2308,277 @@ namespace SmartTags.UI
                 {
                     SkipIfTaggedCheckBox.IsChecked = skipIfTagged;
                 }
+
+                // Detail Line Annotation
+                if (TryGetString(presetDict, "DetailLineItemTypeName", out var detailLineItemTypeName))
+                {
+                    var matchingDetailType = TagTypes.FirstOrDefault(t => t.DisplayName == detailLineItemTypeName);
+                    if (matchingDetailType != null)
+                    {
+                        TagTypeComboBox.SelectedItem = matchingDetailType;
+                    }
+                }
+
+                if (TryGetString(presetDict, "DetailLineOffset", out var detailLineOffset))
+                {
+                    if (DetailLineOffsetTextBox != null)
+                    {
+                        DetailLineOffsetTextBox.Text = detailLineOffset;
+                    }
+                }
+
+                if (TryGetString(presetDict, "DetailLineDirection", out var detailLineDir))
+                {
+                    if (Enum.TryParse<PlacementDirection>(detailLineDir, true, out var parsedDetailDir))
+                    {
+                        SetDetailLineDirection(parsedDetailDir);
+                    }
+                }
+
+                if (TryGetBool(presetDict, "DetailLineAlignToLine", out var detailLineAlign))
+                {
+                    if (DetailLineAlignToLineCheckBox != null)
+                    {
+                        DetailLineAlignToLineCheckBox.IsChecked = detailLineAlign;
+                    }
+                }
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"Failed to load preset: {ex.Message}", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void LoadDetailLineSettings()
+        {
+            if (DetailLineOffsetTextBox == null)
+            {
+                return;
+            }
+
+            var config = LoadConfig();
+
+            if (TryGetString(config, DetailLineOffsetKey, out var offset))
+            {
+                DetailLineOffsetTextBox.Text = string.IsNullOrWhiteSpace(offset) ? "0" : offset;
+            }
+            else
+            {
+                DetailLineOffsetTextBox.Text = "0";
+            }
+
+            if (TryGetString(config, DetailLineDirectionKey, out var dir))
+            {
+                if (Enum.TryParse<PlacementDirection>(dir, true, out var parsedDir))
+                {
+                    SetDetailLineDirection(parsedDir);
+                }
+            }
+
+            if (TryGetBool(config, DetailLineAlignKey, out var align))
+            {
+                if (DetailLineAlignToLineCheckBox != null)
+                {
+                    DetailLineAlignToLineCheckBox.IsChecked = align;
+                }
+            }
+        }
+
+        private void SaveDetailLineSettings()
+        {
+            if (DetailLineOffsetTextBox == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var config = LoadConfig();
+                config[DetailLineOffsetKey] = DetailLineOffsetTextBox.Text ?? "0";
+                config[DetailLineDirectionKey] = GetDetailLineDirection().ToString();
+                config[DetailLineAlignKey] = DetailLineAlignToLineCheckBox?.IsChecked == true;
+                var detailItemTypeOption = TagTypeComboBox?.SelectedItem as TagTypeOption;
+                config[DetailLineItemTypeNameKey] = detailItemTypeOption?.DisplayName ?? string.Empty;
+                SaveConfig(config);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private PlacementDirection GetDetailLineDirection()
+        {
+            if (DetailLineOffsetUpRadio?.IsChecked == true) return PlacementDirection.Up;
+            if (DetailLineOffsetDownRadio?.IsChecked == true) return PlacementDirection.Down;
+            if (DetailLineOffsetLeftRadio?.IsChecked == true) return PlacementDirection.Left;
+            return PlacementDirection.Right;
+        }
+
+        private void SetDetailLineDirection(PlacementDirection direction)
+        {
+            if (DetailLineOffsetUpRadio == null) return;
+            DetailLineOffsetUpRadio.IsChecked = direction == PlacementDirection.Up;
+            DetailLineOffsetDownRadio.IsChecked = direction == PlacementDirection.Down;
+            DetailLineOffsetLeftRadio.IsChecked = direction == PlacementDirection.Left;
+            DetailLineOffsetRightRadio.IsChecked = direction == PlacementDirection.Right;
+        }
+
+        private bool ValidateDetailLineSettings()
+        {
+            if (_uiApplication?.ActiveUIDocument == null)
+            {
+                MessageBox.Show("Open a document before annotating detail lines.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                return false;
+            }
+
+            var detailTypeOption = TagTypeComboBox?.SelectedItem as TagTypeOption;
+            if (detailTypeOption == null)
+            {
+                MessageBox.Show("Select a detail item type to place.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                return false;
+            }
+
+            return true;
+        }
+
+        private void ConfigureDetailLineHandler(IList<ElementId> targetIds)
+        {
+            var detailTypeOption = TagTypeComboBox?.SelectedItem as TagTypeOption;
+            if (detailTypeOption == null)
+            {
+                return;
+            }
+
+            _detailLineAnnotationHandler.DetailItemTypeId = detailTypeOption.TypeId;
+            _detailLineAnnotationHandler.AlignToLineDirection = DetailLineAlignToLineCheckBox?.IsChecked == true;
+            _detailLineAnnotationHandler.OffsetDirection = GetDetailLineDirection();
+
+            // Parse offset as plain millimeter number from the textbox
+            double offsetMm = 0;
+            var offsetText = DetailLineOffsetTextBox?.Text;
+            if (!string.IsNullOrWhiteSpace(offsetText))
+            {
+                double.TryParse(offsetText, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out offsetMm);
+            }
+
+            _detailLineAnnotationHandler.OffsetMillimeters = offsetMm;
+
+            if (targetIds != null)
+            {
+                _detailLineAnnotationHandler.UseSelection = true;
+                _detailLineAnnotationHandler.TargetElementIds = targetIds;
+            }
+            else
+            {
+                _detailLineAnnotationHandler.UseSelection = false;
+                _detailLineAnnotationHandler.TargetElementIds = null;
+            }
+        }
+
+        private void RunDetailLineSelectionLoop()
+        {
+            while (_isDetailLineSelectionActive)
+            {
+                try
+                {
+                    ElementId selectedElementId = null;
+                    bool shouldContinue = true;
+
+                    Dispatcher.Invoke(() =>
+                    {
+                        if (!_isDetailLineSelectionActive)
+                        {
+                            shouldContinue = false;
+                            return;
+                        }
+
+                        var uiDoc = _uiApplication?.ActiveUIDocument;
+                        if (uiDoc == null)
+                        {
+                            _isDetailLineSelectionActive = false;
+                            UpdateActiveSelectionButton();
+                            shouldContinue = false;
+                            return;
+                        }
+
+                        var doc = uiDoc.Document;
+                        var view = doc.ActiveView;
+                        if (view == null)
+                        {
+                            _isDetailLineSelectionActive = false;
+                            UpdateActiveSelectionButton();
+                            shouldContinue = false;
+                            return;
+                        }
+
+                        if (_detailLineSelectionViewId != null && view.Id != _detailLineSelectionViewId)
+                        {
+                            _isDetailLineSelectionActive = false;
+                            UpdateActiveSelectionButton();
+                            shouldContinue = false;
+                            return;
+                        }
+
+                        try
+                        {
+                            var filter = new Services.DetailLineSelectionFilter();
+                            var reference = uiDoc.Selection.PickObject(
+                                Autodesk.Revit.UI.Selection.ObjectType.Element,
+                                filter,
+                                "Click a detail line to annotate (ESC to exit)");
+
+                            if (reference != null)
+                            {
+                                selectedElementId = reference.ElementId;
+                            }
+                        }
+                        catch (Autodesk.Revit.Exceptions.OperationCanceledException)
+                        {
+                            _isDetailLineSelectionActive = false;
+                            UpdateActiveSelectionButton();
+                            shouldContinue = false;
+                            return;
+                        }
+                        catch
+                        {
+                            _isDetailLineSelectionActive = false;
+                            UpdateActiveSelectionButton();
+                            shouldContinue = false;
+                            return;
+                        }
+
+                        if (selectedElementId == null || selectedElementId == ElementId.InvalidElementId)
+                        {
+                            shouldContinue = false;
+                            return;
+                        }
+
+                        ConfigureDetailLineHandler(new List<ElementId> { selectedElementId });
+                        _detailLineAnnotationExternalEvent.Raise();
+                    });
+
+                    if (!shouldContinue)
+                    {
+                        continue;
+                    }
+
+                    System.Threading.Thread.Sleep(300);
+
+                    while (_detailLineAnnotationExternalEvent.IsPending)
+                    {
+                        System.Threading.Thread.Sleep(50);
+                    }
+                }
+                catch
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        _isDetailLineSelectionActive = false;
+                        UpdateActiveSelectionButton();
+                    });
+                    break;
+                }
             }
         }
 
@@ -2249,7 +2664,14 @@ namespace SmartTags.UI
                 preset["EnableCollisionDetection"] = CollisionDetectionCheckBox?.IsChecked == true;
                 preset["CollisionGap"] = CollisionGapTextBox?.Text ?? "1";
                 preset["MinimumOffset"] = MinimumOffsetTextBox?.Text ?? "300";
-                
+
+                // Detail Line Annotation
+                var detailItemTypeOption = TagTypeComboBox?.SelectedItem as TagTypeOption;
+                preset["DetailLineItemTypeName"] = detailItemTypeOption?.DisplayName ?? string.Empty;
+                preset["DetailLineOffset"] = DetailLineOffsetTextBox?.Text ?? "0";
+                preset["DetailLineDirection"] = GetDetailLineDirection().ToString();
+                preset["DetailLineAlignToLine"] = DetailLineAlignToLineCheckBox?.IsChecked == true;
+
                 // Retag/Normalize
                 preset["RetagFullyAutomatic"] = RetagFullyAutomaticCheckBox?.IsChecked == true;
                 
