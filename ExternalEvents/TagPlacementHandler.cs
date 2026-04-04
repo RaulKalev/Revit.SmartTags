@@ -26,6 +26,8 @@ namespace SmartTags.ExternalEvents
         public double CollisionGapMillimeters { get; set; } = 1.0;
         public double MinimumOffsetMillimeters { get; set; } = 300.0;
         public LeaderEndCondition LeaderEndCondition { get; set; } = LeaderEndCondition.Attached;
+        public Action<string> OnStatusMessage { get; set; }
+        public string LastStatusMessage { get; private set; }
 
         public void Execute(UIApplication app)
         {
@@ -313,17 +315,19 @@ namespace SmartTags.ExternalEvents
 
                 if (taggedCount == 0)
                 {
-                    TaskDialog.Show("SmartTags", "No taggable elements were found in the active view.");
+                    LastStatusMessage = "No taggable elements were found in the active view.";
+                    OnStatusMessage?.Invoke(LastStatusMessage);
                 }
                 else
                 {
                     var message = $"Tagged {taggedCount} element(s).";
                     if (collisionCount > 0)
                     {
-                        message += $"\n\nWarning: {collisionCount} tag(s) could not avoid collisions.";
+                        message += $" ({collisionCount} tag(s) could not avoid collisions)";
                     }
                     
-                    TaskDialog.Show("SmartTags", message);
+                    LastStatusMessage = message;
+                    OnStatusMessage?.Invoke(LastStatusMessage);
                 }
             }
         }

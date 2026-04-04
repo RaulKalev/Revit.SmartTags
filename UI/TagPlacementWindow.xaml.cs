@@ -22,6 +22,7 @@ namespace SmartTags.UI
     {
         private const string ConfigFilePath = @"C:\ProgramData\RK Tools\SmartTags\config.json";
         private const string SelectedCategoryKey = "TagPlacementWindow.SelectedCategoryId";
+        private const string SelectedTagTypeKey = "TagPlacementWindow.SelectedTagTypeName";
         private const string CardTagSelectionExpandedKey = "TagPlacementWindow.CardTagSelectionExpanded";
         private const string CardDirectionTagOverrideExpandedKey = "TagPlacementWindow.CardDirectionTagOverrideExpanded";
         private const string CardLeaderExpandedKey = "TagPlacementWindow.CardLeaderExpanded";
@@ -67,6 +68,11 @@ namespace SmartTags.UI
         private bool _isDetailLineSelectionActive;
         private ElementId _detailLineSelectionViewId;
         private bool _isLoadingPreset;
+        private bool _isInitializing;
+
+        // Status message notification
+        private string _originalTitle = "Smart Tags";
+        private DispatcherTimer _titleRestoreTimer;
 
         public ObservableCollection<TagCategoryOption> TagCategories { get; } = new ObservableCollection<TagCategoryOption>();
         public ObservableCollection<TagTypeOption> TagTypes { get; } = new ObservableCollection<TagTypeOption>();
@@ -81,6 +87,7 @@ namespace SmartTags.UI
         public TagPlacementWindow(UIApplication app)
         {
             _uiApplication = app;
+            _isInitializing = true;
             InitializeComponent();
 
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -89,6 +96,7 @@ namespace SmartTags.UI
             DataContext = this;
 
             _tagPlacementHandler = new TagPlacementHandler();
+            _tagPlacementHandler.OnStatusMessage = ShowStatusMessage;
             _tagPlacementExternalEvent = ExternalEvent.Create(_tagPlacementHandler);
 
             _retagApplyHandler = new RetagApplyHandler();
@@ -112,7 +120,6 @@ namespace SmartTags.UI
             LoadCardStates();
             LoadWindowPosition();
             LoadPresets();
-            LoadSelectedPreset();
 
             InitializeLeaderOptions();
             InitializeOrientationOptions();
@@ -124,7 +131,31 @@ namespace SmartTags.UI
             // Show window after initialization to avoid visible animation artifacts
             Loaded += (s, e) =>
             {
-                Dispatcher.BeginInvoke(new Action(() => { Opacity = 1; }), System.Windows.Threading.DispatcherPriority.Loaded);
+                // Load preset/saved selections AFTER window is loaded to ensure ComboBox bindings are ready
+                // Use ContextIdle priority to ensure all layout is complete
+                Dispatcher.BeginInvoke(new Action(() => 
+                { 
+                    // First, try to load a preset (if one was saved)
+                    LoadSelectedPreset();
+                    
+                    // If no preset was loaded, restore saved category and tag type
+                    if (!_isLoadingPreset)
+                    {
+                        ApplySavedCategorySelection();
+                        // Wait for category to populate tag types, then restore saved selection
+                        Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            ApplySavedTagTypeSelection();
+                            _isInitializing = false;
+                        }), System.Windows.Threading.DispatcherPriority.Background);
+                    }
+                    else
+                    {
+                        _isInitializing = false;
+                    }
+                    
+                    Opacity = 1; 
+                }), System.Windows.Threading.DispatcherPriority.ContextIdle);
             };
         }
 
@@ -185,7 +216,7 @@ namespace SmartTags.UI
             var linesCatId = new ElementId(BuiltInCategory.OST_Lines);
             TagCategories.Add(new TagCategoryOption(linesCatId, linesCatId, "Detail Lines", string.Empty));
 
-            ApplySavedCategorySelection();
+            // Don't select category here - wait for Loaded event to ensure bindings are ready
         }
 
         private static bool IsDetailLineCategory(TagCategoryOption option)
@@ -268,7 +299,14 @@ namespace SmartTags.UI
                 UpdateDetailLineControlsVisibility(false);
             }
 
-            TagTypeComboBox.SelectedIndex = TagTypes.Count > 0 ? 0 : -1;
+            // Prevent WPF from auto-selecting the first item
+            TagTypeComboBox.SelectedIndex = -1;
+
+            // Don't auto-select anything during initialization or preset loading
+            if (!_isLoadingPreset && !_isInitializing)
+            {
+                ApplySavedTagTypeSelection();
+            }
         }
 
         private void LeaderLineCheckBox_Toggled(object sender, RoutedEventArgs e)
@@ -853,12 +891,46 @@ namespace SmartTags.UI
         private void TagPlacementWindow_Closed(object sender, EventArgs e)
         {
             SaveSelectedCategory();
+            SaveSelectedTagType();
             SaveLeaderSettings();
             SavePlacementDirection();
             SaveCollisionSettings();
             SaveRetagExecutionMode();
             SaveCardStates();
             SaveWindowPosition();
+            _titleRestoreTimer?.Stop();
+        }
+
+        /// <summary>
+        /// Display a temporary status message in the title bar for 5 seconds
+        /// </summary>
+        public void ShowStatusMessage(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return;
+            }
+
+            Dispatcher.Invoke(() =>
+            {
+                // Stop any existing timer
+                _titleRestoreTimer?.Stop();
+
+                // Update title with status message
+                Title = message;
+
+                // Create and start timer to restore original title after 5 seconds
+                _titleRestoreTimer = new DispatcherTimer
+                {
+                    Interval = TimeSpan.FromSeconds(5)
+                };
+                _titleRestoreTimer.Tick += (s, e) =>
+                {
+                    Title = _originalTitle;
+                    _titleRestoreTimer.Stop();
+                };
+                _titleRestoreTimer.Start();
+            });
         }
 
         private void LoadCardStates()
@@ -1090,6 +1162,67 @@ namespace SmartTags.UI
             {
                 var config = LoadConfig();
                 config[SelectedCategoryKey] = GetElementIdValue(option.TagCategoryId);
+                SaveConfig(config);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private void ApplySavedTagTypeSelection()
+        {
+            if (TagTypes.Count == 0)
+            {
+                return;
+            }
+
+            var savedTagTypeName = GetSavedTagTypeName();
+            if (!string.IsNullOrWhiteSpace(savedTagTypeName))
+            {
+                // Find the index of the matching tag type
+                for (int i = 0; i < TagTypes.Count; i++)
+                {
+                    if (TagTypes[i].DisplayName == savedTagTypeName)
+                    {
+                        TagTypeComboBox.SelectedIndex = i;
+                        TagTypeComboBox.UpdateLayout(); // Force WPF to update display
+                        return;
+                    }
+                }
+            }
+
+            // No saved tag type or not found - select first
+            TagTypeComboBox.SelectedIndex = 0;
+        }
+
+        private string GetSavedTagTypeName()
+        {
+            var config = LoadConfig();
+            if (TryGetString(config, SelectedTagTypeKey, out var saved))
+            {
+                return saved;
+            }
+
+            return null;
+        }
+
+        private void SaveSelectedTagType()
+        {
+            TagTypeOption option = null;
+            if (TagTypeComboBox != null)
+            {
+                option = TagTypeComboBox.SelectedItem as TagTypeOption;
+            }
+
+            if (option == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var config = LoadConfig();
+                config[SelectedTagTypeKey] = option.DisplayName;
                 SaveConfig(config);
             }
             catch (Exception)
@@ -1453,7 +1586,7 @@ namespace SmartTags.UI
                         var result = _retagApplyHandler.LastResult;
                         if (result != null)
                         {
-                            TaskDialog.Show("SmartTags", result.GetSummaryMessage());
+                            ShowStatusMessage(result.GetSummaryMessage());
                         }
                     });
                 });
@@ -1477,7 +1610,7 @@ namespace SmartTags.UI
                         var result = _retagConfirmationHandler.LastResult;
                         if (result != null)
                         {
-                            TaskDialog.Show("SmartTags", result.GetSummaryMessage());
+                            ShowStatusMessage(result.GetSummaryMessage());
                         }
                     });
                 });
@@ -2114,7 +2247,7 @@ namespace SmartTags.UI
                     {
                         _isLoadingPreset = true;
                         PresetComboBox.SelectedItem = selectedPreset;
-                        _isLoadingPreset = false;
+                        // Note: _isLoadingPreset is reset at the end of LoadPreset()
                     }
                 }
             }
@@ -2193,15 +2326,24 @@ namespace SmartTags.UI
                     if (matchingCategory != null)
                     {
                         CategoryComboBox.SelectedItem = matchingCategory;
-                    }
-                }
-                
-                if (TryGetString(preset.ToObject<Dictionary<string, object>>(), "TagTypeName", out var tagTypeName))
-                {
-                    var matchingTagType = TagTypes.FirstOrDefault(t => t.DisplayName == tagTypeName);
-                    if (matchingTagType != null)
-                    {
-                        TagTypeComboBox.SelectedItem = matchingTagType;
+                        
+                        // Wait for category selection to populate TagTypes before setting tag type
+                        if (TryGetString(preset.ToObject<Dictionary<string, object>>(), "TagTypeName", out var tagTypeName))
+                        {
+                            Dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                // Use SelectedIndex for more reliable selection
+                                for (int i = 0; i < TagTypes.Count; i++)
+                                {
+                                    if (TagTypes[i].DisplayName == tagTypeName)
+                                    {
+                                        TagTypeComboBox.SelectedIndex = i;
+                                        TagTypeComboBox.UpdateLayout();
+                                        break;
+                                    }
+                                }
+                            }), System.Windows.Threading.DispatcherPriority.Background);
+                        }
                     }
                 }
                 
@@ -2346,6 +2488,12 @@ namespace SmartTags.UI
             catch (Exception ex)
             {
                 MessageBox.Show($"Failed to load preset: {ex.Message}", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                // Always reset the loading flags, even if there was an error
+                _isLoadingPreset = false;
+                _isInitializing = false;
             }
         }
 
