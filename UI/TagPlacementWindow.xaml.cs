@@ -216,12 +216,31 @@ namespace SmartTags.UI
             var linesCatId = new ElementId(BuiltInCategory.OST_Lines);
             TagCategories.Add(new TagCategoryOption(linesCatId, linesCatId, "Detail Lines", string.Empty));
 
+            // Add "Wires" sentinel when no wire tag families are loaded, so the wire annotation
+            // workflow (treat wire as detail line) is always accessible
+            var wireCatId = new ElementId(BuiltInCategory.OST_Wire);
+            bool wireAlreadyPresent = TagCategories.Any(c => GetElementIdValue(c.ElementCategoryId) == (long)BuiltInCategory.OST_Wire);
+            if (!wireAlreadyPresent)
+                TagCategories.Add(new TagCategoryOption(wireCatId, wireCatId, "Wires", string.Empty));
+
             // Don't select category here - wait for Loaded event to ensure bindings are ready
         }
 
         private static bool IsDetailLineCategory(TagCategoryOption option)
         {
             return option != null && option.DisplayName == "Detail Lines";
+        }
+
+        private bool IsWireCategory(TagCategoryOption option)
+        {
+            if (option == null) return false;
+            return GetElementIdValue(option.ElementCategoryId) == (long)BuiltInCategory.OST_Wire;
+        }
+
+        private bool IsTreatedAsDetailLine(TagCategoryOption option)
+        {
+            if (IsDetailLineCategory(option)) return true;
+            return IsWireCategory(option) && TreatWireAsDetailLineCheckBox?.IsChecked == true;
         }
 
         private void UpdateDetailLineControlsVisibility(bool isDetailLine)
@@ -242,6 +261,15 @@ namespace SmartTags.UI
         {
             var option = e.AddedItems.Count > 0 ? e.AddedItems[0] as TagCategoryOption : null;
             TagTypes.Clear();
+
+            // Reset wire checkbox on every category change
+            if (TreatWireAsDetailLineCheckBox != null)
+            {
+                TreatWireAsDetailLineCheckBox.IsChecked = false;
+                TreatWireAsDetailLineCheckBox.Visibility = System.Windows.Visibility.Collapsed;
+            }
+            if (WireDiagnosticButton != null)
+                WireDiagnosticButton.Visibility = System.Windows.Visibility.Collapsed;
 
             if (option != null)
             {
@@ -282,6 +310,22 @@ namespace SmartTags.UI
                         UpdateDetailLineControlsVisibility(true);
                     }
                 }
+                else if (IsWireCategory(option))
+                {
+                    // Show the wire checkbox; populate with wire tag types for normal wire tagging
+                    if (TreatWireAsDetailLineCheckBox != null)
+                        TreatWireAsDetailLineCheckBox.Visibility = System.Windows.Visibility.Visible;
+                    if (WireDiagnosticButton != null)
+                        WireDiagnosticButton.Visibility = System.Windows.Visibility.Visible;
+
+                    if (_tagTypesByCategory.TryGetValue(option.TagCategoryId, out var wireTypes))
+                    {
+                        foreach (var type in wireTypes)
+                            TagTypes.Add(type);
+                    }
+
+                    UpdateDetailLineControlsVisibility(false);
+                }
                 else if (_tagTypesByCategory.TryGetValue(option.TagCategoryId, out var types))
                 {
                     foreach (var type in types)
@@ -307,6 +351,56 @@ namespace SmartTags.UI
             {
                 ApplySavedTagTypeSelection();
             }
+        }
+
+        private void WireDiagnosticButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!ValidateDetailLineSettings()) return;
+            ConfigureDetailLineHandler(null);
+            _detailLineAnnotationHandler.DiagnosticMode = true;
+            _detailLineAnnotationHandler.UseWireElements = true;
+            _detailLineAnnotationExternalEvent.Raise();
+            _detailLineAnnotationHandler.DiagnosticMode = false;
+        }
+
+        private void TreatWireAsDetailLine_Changed(object sender, RoutedEventArgs e)
+        {            var categoryOption = CategoryComboBox?.SelectedItem as TagCategoryOption;
+            if (!IsWireCategory(categoryOption)) return;
+
+            TagTypes.Clear();
+
+            if (IsTreatedAsDetailLine(categoryOption))
+            {
+                var doc = _uiApplication?.ActiveUIDocument?.Document;
+                if (doc != null)
+                {
+                    var symbols = new FilteredElementCollector(doc)
+                        .OfClass(typeof(FamilySymbol))
+                        .Cast<FamilySymbol>()
+                        .Where(s => s.Category != null &&
+                                    s.Category.Id == new ElementId(BuiltInCategory.OST_DetailComponents))
+                        .OrderBy(s => s.Family?.Name)
+                        .ThenBy(s => s.Name)
+                        .ToList();
+
+                    foreach (var sym in symbols)
+                        TagTypes.Add(new TagTypeOption(sym.Id, sym.Family?.Name ?? string.Empty, sym.Name));
+                }
+
+                UpdateDetailLineControlsVisibility(true);
+            }
+            else
+            {
+                if (_tagTypesByCategory.TryGetValue(categoryOption.TagCategoryId, out var types))
+                {
+                    foreach (var type in types)
+                        TagTypes.Add(type);
+                }
+
+                UpdateDetailLineControlsVisibility(false);
+            }
+
+            TagTypeComboBox.SelectedIndex = TagTypes.Count > 0 ? 0 : -1;
         }
 
         private void LeaderLineCheckBox_Toggled(object sender, RoutedEventArgs e)
@@ -415,7 +509,7 @@ namespace SmartTags.UI
         private void TagAllButton_Click(object sender, RoutedEventArgs e)
         {
             var categoryOption = CategoryComboBox?.SelectedItem as TagCategoryOption;
-            if (IsDetailLineCategory(categoryOption))
+            if (IsTreatedAsDetailLine(categoryOption))
             {
                 if (!ValidateDetailLineSettings()) return;
                 SaveDetailLineSettings();
@@ -435,7 +529,7 @@ namespace SmartTags.UI
         private void TagSelectedButton_Click(object sender, RoutedEventArgs e)
         {
             var categoryOption = CategoryComboBox?.SelectedItem as TagCategoryOption;
-            if (IsDetailLineCategory(categoryOption))
+            if (IsTreatedAsDetailLine(categoryOption))
             {
                 if (!ValidateDetailLineSettings()) return;
 
@@ -446,20 +540,24 @@ namespace SmartTags.UI
                 var selectionIds = uiDoc.Selection.GetElementIds();
                 if (selectionIds == null || selectionIds.Count == 0)
                 {
-                    MessageBox.Show("Select detail lines in the view before using this button.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                    var elementTypeName = IsWireCategory(categoryOption) ? "wires" : "detail lines";
+                    MessageBox.Show("Select " + elementTypeName + " in the view before using this button.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
 
                 var filteredIds = new List<ElementId>();
+                var isWireMode = IsWireCategory(categoryOption);
                 foreach (var id in selectionIds)
                 {
-                    if (doc.GetElement(id) is DetailCurve)
+                    var elem = doc.GetElement(id);
+                    if (isWireMode ? (elem is Autodesk.Revit.DB.Electrical.Wire) : (elem is DetailCurve))
                         filteredIds.Add(id);
                 }
 
                 if (filteredIds.Count == 0)
                 {
-                    MessageBox.Show("No selected elements are detail lines.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                    var elementTypeName = isWireMode ? "wires" : "detail lines";
+                    MessageBox.Show("No selected elements are " + elementTypeName + ".", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
 
@@ -1738,7 +1836,7 @@ namespace SmartTags.UI
             }
 
             var categoryOption = CategoryComboBox?.SelectedItem as TagCategoryOption;
-            if (IsDetailLineCategory(categoryOption))
+            if (IsTreatedAsDetailLine(categoryOption))
             {
                 if (_isDetailLineSelectionActive || _isActiveSelectionModeActive)
                 {
@@ -1754,7 +1852,8 @@ namespace SmartTags.UI
                 _isDetailLineSelectionActive = true;
                 _detailLineSelectionViewId = _uiApplication?.ActiveUIDocument?.Document?.ActiveView?.Id;
                 ActiveSelectionToggleButton.Content = "Stop";
-                System.Threading.Tasks.Task.Run(() => RunDetailLineSelectionLoop());
+                var useWireFilter = IsWireCategory(categoryOption);
+                System.Threading.Tasks.Task.Run(() => RunDetailLineSelectionLoop(useWireFilter));
                 return;
             }
 
@@ -2600,6 +2699,8 @@ namespace SmartTags.UI
             _detailLineAnnotationHandler.DetailItemTypeId = detailTypeOption.TypeId;
             _detailLineAnnotationHandler.AlignToLineDirection = DetailLineAlignToLineCheckBox?.IsChecked == true;
             _detailLineAnnotationHandler.OffsetDirection = GetDetailLineDirection();
+            _detailLineAnnotationHandler.UseWireElements = IsWireCategory(CategoryComboBox?.SelectedItem as TagCategoryOption)
+                && TreatWireAsDetailLineCheckBox?.IsChecked == true;
 
             // Parse offset as plain millimeter number from the textbox
             double offsetMm = 0;
@@ -2624,7 +2725,7 @@ namespace SmartTags.UI
             }
         }
 
-        private void RunDetailLineSelectionLoop()
+        private void RunDetailLineSelectionLoop(bool useWireFilter = false)
         {
             while (_isDetailLineSelectionActive)
             {
@@ -2670,11 +2771,16 @@ namespace SmartTags.UI
 
                         try
                         {
-                            var filter = new Services.DetailLineSelectionFilter();
+                            var promptText = useWireFilter
+                                ? "Click a wire to annotate (ESC to exit)"
+                                : "Click a detail line to annotate (ESC to exit)";
+                            Autodesk.Revit.UI.Selection.ISelectionFilter filter = useWireFilter
+                                ? (Autodesk.Revit.UI.Selection.ISelectionFilter)new Services.WireSelectionFilter()
+                                : new Services.DetailLineSelectionFilter();
                             var reference = uiDoc.Selection.PickObject(
                                 Autodesk.Revit.UI.Selection.ObjectType.Element,
                                 filter,
-                                "Click a detail line to annotate (ESC to exit)");
+                                promptText);
 
                             if (reference != null)
                             {

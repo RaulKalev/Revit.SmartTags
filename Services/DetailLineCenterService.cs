@@ -5,6 +5,8 @@ namespace SmartTags.Services
 {
     public static class DetailLineCenterService
     {
+        // DetailCurve overloads - delegate to Curve-based methods
+
         public static XYZ GetMidpoint(DetailCurve detailCurve)
         {
             if (detailCurve == null)
@@ -12,27 +14,7 @@ namespace SmartTags.Services
                 return null;
             }
 
-            var curve = detailCurve.GeometryCurve;
-            if (curve == null)
-            {
-                return null;
-            }
-
-            try
-            {
-                // Evaluate at normalized parameter 0.5 gives the geometric midpoint by arc length
-                return curve.Evaluate(0.5, true);
-            }
-            catch
-            {
-                // Fallback: use arithmetic midpoint of endpoints
-                var start = curve.GetEndPoint(0);
-                var end = curve.GetEndPoint(1);
-                return new XYZ(
-                    (start.X + end.X) / 2.0,
-                    (start.Y + end.Y) / 2.0,
-                    (start.Z + end.Z) / 2.0);
-            }
+            return GetMidpoint(detailCurve.GeometryCurve);
         }
 
         public static XYZ GetTangentAtMidpoint(DetailCurve detailCurve, View view)
@@ -42,8 +24,46 @@ namespace SmartTags.Services
                 return null;
             }
 
-            var curve = detailCurve.GeometryCurve;
+            return GetTangentAtMidpoint(detailCurve.GeometryCurve, view);
+        }
+
+        public static double GetRotationAngle(DetailCurve detailCurve, View view)
+        {
+            if (detailCurve == null)
+            {
+                return 0;
+            }
+
+            return GetRotationAngle(detailCurve.GeometryCurve, view);
+        }
+
+        // Curve-based overloads - used directly for wires and other geometry sources
+
+        public static XYZ GetMidpoint(Curve curve)
+        {
             if (curve == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                return curve.Evaluate(0.5, true);
+            }
+            catch
+            {
+                var start = curve.GetEndPoint(0);
+                var end = curve.GetEndPoint(1);
+                return new XYZ(
+                    (start.X + end.X) / 2.0,
+                    (start.Y + end.Y) / 2.0,
+                    (start.Z + end.Z) / 2.0);
+            }
+        }
+
+        public static XYZ GetTangentAtMidpoint(Curve curve, View view)
+        {
+            if (curve == null || view == null)
             {
                 return null;
             }
@@ -56,7 +76,6 @@ namespace SmartTags.Services
             }
             catch
             {
-                // Fallback: use chord direction
                 var start = curve.GetEndPoint(0);
                 var end = curve.GetEndPoint(1);
                 tangent = end - start;
@@ -67,7 +86,6 @@ namespace SmartTags.Services
                 return view.RightDirection;
             }
 
-            // Project onto view plane to ensure we work in 2D view coordinates
             var normal = view.ViewDirection;
             var projected = tangent - normal.Multiply(tangent.DotProduct(normal));
             if (projected.GetLength() < 1e-9)
@@ -78,20 +96,17 @@ namespace SmartTags.Services
             return projected.Normalize();
         }
 
-        public static double GetRotationAngle(DetailCurve detailCurve, View view)
+        public static double GetRotationAngle(Curve curve, View view)
         {
-            var tangent = GetTangentAtMidpoint(detailCurve, view);
+            var tangent = GetTangentAtMidpoint(curve, view);
             if (tangent == null)
             {
                 return 0;
             }
 
-            // Angle of tangent relative to view's right direction, measured in view plane
             var right = view.RightDirection;
-            var up = view.UpDirection;
             var normal = view.ViewDirection;
 
-            // Signed angle from RightDirection to tangent around view normal
             var unsignedAngle = right.AngleTo(tangent);
             var cross = right.CrossProduct(tangent);
             var sign = cross.DotProduct(normal) < 0 ? -1.0 : 1.0;

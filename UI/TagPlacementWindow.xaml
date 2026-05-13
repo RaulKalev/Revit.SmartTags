@@ -233,6 +233,7 @@
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
                                     </Grid.RowDefinitions>
 
                                     <TextBlock
@@ -280,10 +281,40 @@
                                         </CheckBox.LayoutTransform>
                                     </CheckBox>
 
-                                    <!--  Detail Lines rows (shown only when Detail Lines category is selected)  -->
+                                    <!--  Wire treat-as-detail-lines toggle (shown only when Wire category is selected)  -->
+                                    <CheckBox
+                                        x:Name="TreatWireAsDetailLineCheckBox"
+                                        Grid.Row="3"
+                                        Grid.Column="0"
+                                        Grid.ColumnSpan="2"
+                                        Margin="0,0,0,8"
+                                        Content="Treat as detail lines"
+                                        IsChecked="False"
+                                        Style="{StaticResource CustomCheckboxStyle}"
+                                        Visibility="Collapsed"
+                                        Checked="TreatWireAsDetailLine_Changed"
+                                        Unchecked="TreatWireAsDetailLine_Changed">
+                                        <CheckBox.LayoutTransform>
+                                            <ScaleTransform ScaleX="0.85" ScaleY="0.85" />
+                                        </CheckBox.LayoutTransform>
+                                    </CheckBox>
+
+                                    <!--  Wire diagnostic button (dev only, hidden by default)  -->
+                                    <Button
+                                        x:Name="WireDiagnosticButton"
+                                        Grid.Row="3"
+                                        Grid.Column="1"
+                                        Margin="4,0,0,8"
+                                        Padding="4,2"
+                                        HorizontalAlignment="Right"
+                                        Content="Diagnose"
+                                        Visibility="Collapsed"
+                                        Click="WireDiagnosticButton_Click" />
+
+                                    <!--  Detail Lines rows (shown only when Detail Lines category or wire+treat-as-detail-lines is selected)  -->
                                     <TextBlock
                                         x:Name="DetailLineOffsetLabel"
-                                        Grid.Row="3"
+                                        Grid.Row="4"
                                         Grid.Column="0"
                                         Margin="0,8,10,8"
                                         Style="{StaticResource CustomTextBlock}"
@@ -291,7 +322,7 @@
                                         Visibility="Collapsed" />
                                     <Grid
                                         x:Name="DetailLineOffsetGrid"
-                                        Grid.Row="3"
+                                        Grid.Row="4"
                                         Grid.Column="1"
                                         Margin="0,8,0,8"
                                         Visibility="Collapsed">
@@ -314,7 +345,7 @@
 
                                     <TextBlock
                                         x:Name="DetailLineDirectionLabel"
-                                        Grid.Row="4"
+                                        Grid.Row="5"
                                         Grid.Column="0"
                                         Margin="0,0,10,8"
                                         Style="{StaticResource CustomTextBlock}"
@@ -322,7 +353,7 @@
                                         Visibility="Collapsed" />
                                     <StackPanel
                                         x:Name="DetailLineDirectionPanel"
-                                        Grid.Row="4"
+                                        Grid.Row="5"
                                         Grid.Column="1"
                                         Margin="0,0,0,8"
                                         Orientation="Horizontal"
@@ -355,7 +386,7 @@
 
                                     <CheckBox
                                         x:Name="DetailLineAlignToLineCheckBox"
-                                        Grid.Row="5"
+                                        Grid.Row="6"
                                         Grid.Column="0"
                                         Grid.ColumnSpan="2"
                                         Margin="0,0,0,8"
