@@ -104,30 +104,11 @@
                 </Button>
             </StackPanel>
 
-            <StackPanel
+            <TextBlock
                 Margin="16,0,0,0"
                 VerticalAlignment="Center"
-                Orientation="Horizontal">
-                <Border
-                    Width="24"
-                    Height="24"
-                    VerticalAlignment="Center"
-                    Background="{DynamicResource Accent}"
-                    CornerRadius="7">
-                    <materialDesign:PackIcon
-                        Width="15"
-                        Height="15"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center"
-                        Foreground="{DynamicResource Text.OnAccent}"
-                        Kind="TagMultipleOutline" />
-                </Border>
-                <TextBlock
-                    Margin="10,0,0,0"
-                    VerticalAlignment="Center"
-                    Style="{StaticResource Type.Title}"
-                    Text="Smart Tags" />
-            </StackPanel>
+                Style="{StaticResource Type.Title}"
+                Text="Smart Tags" />
         </DockPanel>
 
         <!--  ============ Preset ============  -->
@@ -536,15 +517,95 @@
                             </UniformGrid>
                         </Border>
 
-                        <!--  Anchor: nine points on the tag outline  -->
+                        <!--  Leader: type + length (length also sets the offset when the leader is off)  -->
                         <TextBlock
                             Grid.Row="1"
+                            Style="{StaticResource Type.Label}"
+                            Text="Leader" />
+                        <Grid
+                            Grid.Row="1"
+                            Grid.Column="1"
+                            Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="96" />
+                            </Grid.ColumnDefinitions>
+                            <ComboBox
+                                x:Name="LeaderTypeComboBox"
+                                Margin="0,0,8,0"
+                                AutomationProperties.Name="Leader end"
+                                DisplayMemberPath="Name"
+                                ItemsSource="{Binding LeaderTypes}"
+                                Style="{StaticResource Input.Combo}" />
+                            <Grid Grid.Column="1" ToolTip="Leader length. Also used as the tag offset when the leader is off.">
+                                <TextBox
+                                    x:Name="LeaderLengthTextBox"
+                                    AutomationProperties.Name="Leader length in millimetres"
+                                    Style="{StaticResource Input.Number}"
+                                    Tag="Length"
+                                    Text="0" />
+                                <TextBlock Style="{StaticResource Type.Unit}" Text="mm" />
+                            </Grid>
+                        </Grid>
+                        <CheckBox
+                            x:Name="LeaderLineCheckBox"
+                            Grid.Row="2"
+                            Grid.Column="1"
+                            Margin="0,0,0,10"
+                            Checked="LeaderLineCheckBox_Toggled"
+                            Content="Leader line"
+                            IsChecked="True"
+                            Style="{StaticResource Input.Check}"
+                            Unchecked="LeaderLineCheckBox_Toggled" />
+
+                        <!--  Orientation: type + angle  -->
+                        <TextBlock
+                            Grid.Row="3"
+                            Style="{StaticResource Type.Label}"
+                            Text="Orientation" />
+                        <Grid
+                            Grid.Row="3"
+                            Grid.Column="1"
+                            Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="96" />
+                            </Grid.ColumnDefinitions>
+                            <ComboBox
+                                x:Name="OrientationComboBox"
+                                Margin="0,0,8,0"
+                                AutomationProperties.Name="Orientation"
+                                DisplayMemberPath="Name"
+                                ItemsSource="{Binding OrientationOptions}"
+                                Style="{StaticResource Input.Combo}" />
+                            <Grid Grid.Column="1">
+                                <TextBox
+                                    x:Name="AngleTextBox"
+                                    AutomationProperties.Name="Angle in degrees"
+                                    Style="{StaticResource Input.Number}"
+                                    Tag="Angle"
+                                    Text="0" />
+                                <TextBlock Style="{StaticResource Type.Unit}" Text="°" />
+                            </Grid>
+                        </Grid>
+                        <CheckBox
+                            x:Name="DetectRotationCheckBox"
+                            Grid.Row="4"
+                            Grid.Column="1"
+                            Margin="0,0,0,12"
+                            Content="Detect element rotation"
+                            IsChecked="False"
+                            Style="{StaticResource Input.Check}" />
+
+                        <!--  Anchor: nine points on the tag outline  -->
+                        <TextBlock
+                            Grid.Row="5"
                             Margin="0,6,12,8"
                             VerticalAlignment="Top"
                             Style="{StaticResource Type.Label}"
                             Text="Anchor" />
                         <Border
-                            Grid.Row="1"
+                            Grid.Row="5"
                             Grid.Column="1"
                             Margin="0,0,0,8"
                             Padding="6"
@@ -672,85 +733,6 @@
                             </Grid>
                         </Border>
 
-                        <!--  Leader: type + length (length also sets the offset when the leader is off)  -->
-                        <TextBlock
-                            Grid.Row="2"
-                            Style="{StaticResource Type.Label}"
-                            Text="Leader" />
-                        <Grid
-                            Grid.Row="2"
-                            Grid.Column="1"
-                            Margin="0,0,0,8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="96" />
-                            </Grid.ColumnDefinitions>
-                            <ComboBox
-                                x:Name="LeaderTypeComboBox"
-                                Margin="0,0,8,0"
-                                AutomationProperties.Name="Leader end"
-                                DisplayMemberPath="Name"
-                                ItemsSource="{Binding LeaderTypes}"
-                                Style="{StaticResource Input.Combo}" />
-                            <Grid Grid.Column="1" ToolTip="Leader length. Also used as the tag offset when the leader is off.">
-                                <TextBox
-                                    x:Name="LeaderLengthTextBox"
-                                    AutomationProperties.Name="Leader length in millimetres"
-                                    Style="{StaticResource Input.Number}"
-                                    Tag="Length"
-                                    Text="0" />
-                                <TextBlock Style="{StaticResource Type.Unit}" Text="mm" />
-                            </Grid>
-                        </Grid>
-                        <CheckBox
-                            x:Name="LeaderLineCheckBox"
-                            Grid.Row="3"
-                            Grid.Column="1"
-                            Margin="0,0,0,10"
-                            Checked="LeaderLineCheckBox_Toggled"
-                            Content="Leader line"
-                            IsChecked="True"
-                            Style="{StaticResource Input.Check}"
-                            Unchecked="LeaderLineCheckBox_Toggled" />
-
-                        <!--  Orientation: type + angle  -->
-                        <TextBlock
-                            Grid.Row="4"
-                            Style="{StaticResource Type.Label}"
-                            Text="Orientation" />
-                        <Grid
-                            Grid.Row="4"
-                            Grid.Column="1"
-                            Margin="0,0,0,8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="96" />
-                            </Grid.ColumnDefinitions>
-                            <ComboBox
-                                x:Name="OrientationComboBox"
-                                Margin="0,0,8,0"
-                                AutomationProperties.Name="Orientation"
-                                DisplayMemberPath="Name"
-                                ItemsSource="{Binding OrientationOptions}"
-                                Style="{StaticResource Input.Combo}" />
-                            <Grid Grid.Column="1">
-                                <TextBox
-                                    x:Name="AngleTextBox"
-                                    AutomationProperties.Name="Angle in degrees"
-                                    Style="{StaticResource Input.Number}"
-                                    Tag="Angle"
-                                    Text="0" />
-                                <TextBlock Style="{StaticResource Type.Unit}" Text="°" />
-                            </Grid>
-                        </Grid>
-                        <CheckBox
-                            x:Name="DetectRotationCheckBox"
-                            Grid.Row="5"
-                            Grid.Column="1"
-                            Margin="0,0,0,8"
-                            Content="Detect element rotation"
-                            IsChecked="False"
-                            Style="{StaticResource Input.Check}" />
                     </Grid>
                 </Expander>
 

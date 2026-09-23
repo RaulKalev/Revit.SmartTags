@@ -5,7 +5,7 @@ SmartTags is a Revit add-in that replaces the default tag placement workflow wit
 ## Features
 
 - **Smart Tag Placement**: Select an element category and matching tag family/type from the current model
-- **Compact, Apple-style UI**: Shares the Sentinel design system (system type scale, dark and light appearance, collapsible section cards, native Windows frame). The Placement card groups direction (segmented control), a 9-point anchor picker, leader and orientation
+- **Compact, Apple-style UI**: Shares the Sentinel design system (system type scale, dark and light appearance, collapsible section cards, native Windows frame). The Placement card groups direction (segmented control), leader, orientation and a 9-point anchor picker
 - **Active Selection Mode**: Click-to-tag workflow with duplicate detection and category filtering
 - **Direction-Based Tag Types**: Automatically select different tag types based on placement direction (Left/Right/Up/Down)
 - **Anchor Point Selection**: Choose from 9 anchor positions (corners, edges, center) for precise tag placement
