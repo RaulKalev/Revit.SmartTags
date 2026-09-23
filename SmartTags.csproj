@@ -15,7 +15,8 @@
 
   
   <ItemGroup>
-    <EmbeddedResource Include="Assets\SmartTags.tiff" />
+    <EmbeddedResource Include="Assets\SmartTags-light.tiff" />
+    <EmbeddedResource Include="Assets\SmartTags-dark.tiff" />
   </ItemGroup>	
   
   <ItemGroup>
@@ -48,7 +49,10 @@
   </ItemGroup>
 	
 	<ItemGroup>
-		<Resource Include="Assets\SmartTags.tiff">
+		<Resource Include="Assets\SmartTags-light.tiff">
+			<CopyToOutputDirectory>Never</CopyToOutputDirectory>
+		</Resource>
+		<Resource Include="Assets\SmartTags-dark.tiff">
 			<CopyToOutputDirectory>Never</CopyToOutputDirectory>
 		</Resource>
 
