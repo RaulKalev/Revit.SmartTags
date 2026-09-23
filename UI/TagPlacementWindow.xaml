@@ -237,6 +237,7 @@
                             Grid.Row="1"
                             Grid.Column="1"
                             Margin="0,0,0,8"
+                            ui:ComboBoxSearch.IsEnabled="True"
                             AutomationProperties.Name="Tag type"
                             DisplayMemberPath="DisplayName"
                             ItemsSource="{Binding TagTypes}"
@@ -361,6 +362,42 @@
                         <StackPanel Orientation="Horizontal">
                             <materialDesign:PackIcon Kind="SwapHorizontal" Style="{StaticResource SectionIcon}" />
                             <TextBlock Text="Direction tag override" />
+                            <!--  Hover help: how direction tag types are found and used  -->
+                            <Border
+                                Margin="6,0,0,0"
+                                Padding="2"
+                                VerticalAlignment="Center"
+                                AutomationProperties.HelpText="Uses a different tag type for each placement direction. Check finds tag types of the chosen category whose type name contains Left, Right, Up or Down."
+                                AutomationProperties.Name="How direction tag override works"
+                                Background="Transparent"
+                                Cursor="Help"
+                                ToolTipService.InitialShowDelay="150"
+                                ToolTipService.ShowDuration="60000">
+                                <materialDesign:PackIcon
+                                    Width="14"
+                                    Height="14"
+                                    Foreground="{DynamicResource Text.Tertiary}"
+                                    Kind="InformationOutline" />
+                                <Border.ToolTip>
+                                    <StackPanel MaxWidth="300">
+                                        <StackPanel.Resources>
+                                            <Style TargetType="{x:Type TextBlock}">
+                                                <Setter Property="TextWrapping" Value="Wrap" />
+                                                <Setter Property="LineHeight" Value="16" />
+                                            </Style>
+                                        </StackPanel.Resources>
+                                        <TextBlock
+                                            Margin="0,0,0,6"
+                                            FontWeight="SemiBold"
+                                            Text="Direction tag override" />
+                                        <TextBlock Margin="0,0,0,6" Text="Uses a different tag type for each placement direction, for example a tag that reads to the left when tags go left." />
+                                        <TextBlock Margin="0,0,0,6" Text="• Finding types: Check looks through the tag types of the chosen element category. A type is used for a direction when its type name (not the family name) contains Left, Right, Up or Down, in any letter case. The first match wins." />
+                                        <TextBlock Margin="0,0,0,6" Text="• It also runs by itself when the category changes. Pick a different type in any of the four lists to override the match." />
+                                        <TextBlock Margin="0,0,0,6" Text="• Placing: the type for the chosen Placement direction replaces the tag family + type from Tag selection. A direction with no type uses the Tag selection type." />
+                                        <TextBlock Foreground="{DynamicResource Text.Secondary}" Text="Note: the keyword does not narrow the search yet: any type name containing the direction word matches. Short words also match inside longer ones, such as up in Group." />
+                                    </StackPanel>
+                                </Border.ToolTip>
+                            </Border>
                         </StackPanel>
                     </Expander.Header>
                     <Grid>
@@ -497,21 +534,25 @@
                                 <CheckBox
                                     x:Name="PlacementUpCheckBox"
                                     Checked="PlacementDirection_Checked"
+                                    Unchecked="PlacementDirection_Unchecked"
                                     Content="Up"
                                     Style="{StaticResource Segment}" />
                                 <CheckBox
                                     x:Name="PlacementDownCheckBox"
                                     Checked="PlacementDirection_Checked"
+                                    Unchecked="PlacementDirection_Unchecked"
                                     Content="Down"
                                     Style="{StaticResource Segment}" />
                                 <CheckBox
                                     x:Name="PlacementLeftCheckBox"
                                     Checked="PlacementDirection_Checked"
+                                    Unchecked="PlacementDirection_Unchecked"
                                     Content="Left"
                                     Style="{StaticResource Segment}" />
                                 <CheckBox
                                     x:Name="PlacementRightCheckBox"
                                     Checked="PlacementDirection_Checked"
+                                    Unchecked="PlacementDirection_Unchecked"
                                     Content="Right"
                                     Style="{StaticResource Segment}" />
                             </UniformGrid>
@@ -849,6 +890,7 @@
                                 <CheckBox
                                     x:Name="RetagFullyAutomaticCheckBox"
                                     Checked="RetagExecutionMode_Changed"
+                                    Unchecked="RetagExecutionMode_Unchecked"
                                     Content="Automatically"
                                     IsChecked="True"
                                     Style="{StaticResource Segment}"
@@ -856,6 +898,7 @@
                                 <CheckBox
                                     x:Name="RetagUserConfirmationCheckBox"
                                     Checked="RetagExecutionMode_Changed"
+                                    Unchecked="RetagExecutionMode_Unchecked"
                                     Content="Confirm each"
                                     IsChecked="False"
                                     Style="{StaticResource Segment}"
@@ -922,7 +965,7 @@
                     Content="Skip tagged"
                     IsChecked="True"
                     Style="{StaticResource Input.Check}"
-                    ToolTip="Leave out elements that already have a tag in this view" />
+                    ToolTip="Leave out elements that already have a tag of this category in the view (Select, Tag all and Tag selected)" />
                 <StackPanel
                     HorizontalAlignment="Right"
                     DockPanel.Dock="Right"
@@ -969,25 +1012,32 @@
                 Style="{StaticResource Floating}">
                 <DockPanel>
                     <!--  Secondary left of primary; primary is the default (Enter), secondary cancels (Esc)  -->
-                    <StackPanel
-                        Margin="0,16,0,0"
-                        HorizontalAlignment="Right"
-                        DockPanel.Dock="Bottom"
-                        Orientation="Horizontal">
+                    <DockPanel Margin="0,16,0,0" DockPanel.Dock="Bottom">
+                        <!--  Optional third choice on the left, apart from Cancel / primary (e.g. "Don't save")  -->
                         <Button
-                            x:Name="SheetSecondary"
+                            x:Name="SheetTertiary"
                             MinWidth="80"
                             Margin="0,0,8,0"
-                            Click="SheetSecondary_Click"
-                            Content="Cancel"
-                            Style="{StaticResource Button.Secondary}" />
-                        <Button
-                            x:Name="SheetPrimary"
-                            MinWidth="80"
-                            Click="SheetPrimary_Click"
-                            Content="OK"
-                            Style="{StaticResource Button.Primary}" />
-                    </StackPanel>
+                            Click="SheetTertiary_Click"
+                            DockPanel.Dock="Left"
+                            Style="{StaticResource Button.Secondary}"
+                            Visibility="Collapsed" />
+                        <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                            <Button
+                                x:Name="SheetSecondary"
+                                MinWidth="80"
+                                Margin="0,0,8,0"
+                                Click="SheetSecondary_Click"
+                                Content="Cancel"
+                                Style="{StaticResource Button.Secondary}" />
+                            <Button
+                                x:Name="SheetPrimary"
+                                MinWidth="80"
+                                Click="SheetPrimary_Click"
+                                Content="OK"
+                                Style="{StaticResource Button.Primary}" />
+                        </StackPanel>
+                    </DockPanel>
 
                     <materialDesign:PackIcon
                         x:Name="SheetIcon"

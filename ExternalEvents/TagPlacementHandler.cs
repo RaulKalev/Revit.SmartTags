@@ -26,6 +26,8 @@ namespace SmartTags.ExternalEvents
         public double CollisionGapMillimeters { get; set; } = 1.0;
         public double MinimumOffsetMillimeters { get; set; } = 300.0;
         public LeaderEndCondition LeaderEndCondition { get; set; } = LeaderEndCondition.Attached;
+        public bool SkipIfAlreadyTagged { get; set; }
+        public ElementId TagCategoryId { get; set; } = ElementId.InvalidElementId;
         public Action<string> OnStatusMessage { get; set; }
         public string LastStatusMessage { get; private set; }
 
@@ -102,10 +104,22 @@ namespace SmartTags.ExternalEvents
                     collisionDetector.CollectObstacles(doc, null);
                 }
 
+                // Elements that already have a tag of this tag category in the view (collected once)
+                var alreadyTaggedIds = SkipIfAlreadyTagged
+                    ? TagExistenceChecker.GetTaggedElementIdsInView(doc, view, TagCategoryId)
+                    : null;
+
                 int taggedCount = 0;
                 int collisionCount = 0;
+                int skippedCount = 0;
                 foreach (var element in elements)
                 {
+                    if (alreadyTaggedIds != null && alreadyTaggedIds.Contains(element.Id))
+                    {
+                        skippedCount++;
+                        continue;
+                    }
+
                     if (!AnchorPointService.TryGetAnchorPoint(element, view, AnchorPoint, out var anchor))
                     {
                         continue;
@@ -313,7 +327,12 @@ namespace SmartTags.ExternalEvents
 
                 t.Commit();
 
-                if (taggedCount == 0)
+                if (taggedCount == 0 && skippedCount > 0)
+                {
+                    LastStatusMessage = $"All {skippedCount} element(s) are already tagged in this view.";
+                    OnStatusMessage?.Invoke(LastStatusMessage);
+                }
+                else if (taggedCount == 0)
                 {
                     LastStatusMessage = "No taggable elements were found in the active view.";
                     OnStatusMessage?.Invoke(LastStatusMessage);
@@ -321,6 +340,10 @@ namespace SmartTags.ExternalEvents
                 else
                 {
                     var message = $"Tagged {taggedCount} element(s).";
+                    if (skippedCount > 0)
+                    {
+                        message += $" Skipped {skippedCount} already tagged.";
+                    }
                     if (collisionCount > 0)
                     {
                         message += $" ({collisionCount} tag(s) could not avoid collisions)";

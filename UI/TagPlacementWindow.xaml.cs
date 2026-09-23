@@ -37,6 +37,12 @@ namespace SmartTags.UI
         private const string DetailLineAlignKey = "DetailLine.AlignToLine";
         private const string LeaderLengthKey = "TagPlacementWindow.LeaderLength";
         private const string AngleKey = "TagPlacementWindow.Angle";
+        private const string HasLeaderKey = "TagPlacementWindow.HasLeader";
+        private const string LeaderTypeKey = "TagPlacementWindow.LeaderType";
+        private const string OrientationKey = "TagPlacementWindow.Orientation";
+        private const string DetectRotationKey = "TagPlacementWindow.DetectRotation";
+        private const string AnchorPointKey = "TagPlacementWindow.AnchorPoint";
+        private const string SkipIfTaggedKey = "TagPlacementWindow.SkipIfTagged";
         private const string PlacementDirectionKey = "TagPlacementWindow.PlacementDirection";
         private const string CollisionDetectionEnabledKey = "TagPlacementWindow.CollisionDetectionEnabled";
         private const string CollisionGapKey = "TagPlacementWindow.CollisionGap";
@@ -68,6 +74,9 @@ namespace SmartTags.UI
         private bool _isDetailLineSelectionActive;
         private ElementId _detailLineSelectionViewId;
         private bool _isLoadingPreset;
+        private bool _showPresetWithoutApplying;
+        private bool _closeConfirmed;
+        private string _restorePresetOnClose;
         private bool _isInitializing;
 
         // Status message notification (feedback line)
@@ -92,6 +101,7 @@ namespace SmartTags.UI
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             // The window sizes to its content; long content scrolls instead of growing past the screen.
             MaxHeight = SystemParameters.WorkArea.Height - 24;
+            Closing += TagPlacementWindow_Closing;
             Closed += TagPlacementWindow_Closed;
             PreviewKeyDown += OnSheetPreviewKeyDown;
 
@@ -125,6 +135,7 @@ namespace SmartTags.UI
 
             InitializeLeaderOptions();
             InitializeOrientationOptions();
+            LoadPlacementOptions();
             LoadTagOptions(app.ActiveUIDocument?.Document);
             LoadDetailLineSettings();
             UpdateLeaderInputs();
@@ -137,25 +148,18 @@ namespace SmartTags.UI
                 // Use ContextIdle priority to ensure all layout is complete
                 Dispatcher.BeginInvoke(new Action(() => 
                 { 
-                    // First, try to load a preset (if one was saved)
+                    // Show the preset the settings came from (its values are not re-applied)
                     LoadSelectedPreset();
-                    
-                    // If no preset was loaded, restore saved category and tag type
-                    if (!_isLoadingPreset)
+
+                    // Restore the last session's category and tag type
+                    ApplySavedCategorySelection();
+                    // Wait for category to populate tag types, then restore saved selection
+                    Dispatcher.BeginInvoke(new Action(() =>
                     {
-                        ApplySavedCategorySelection();
-                        // Wait for category to populate tag types, then restore saved selection
-                        Dispatcher.BeginInvoke(new Action(() =>
-                        {
-                            ApplySavedTagTypeSelection();
-                            _isInitializing = false;
-                        }), System.Windows.Threading.DispatcherPriority.Background);
-                    }
-                    else
-                    {
+                        ApplySavedTagTypeSelection();
                         _isInitializing = false;
-                    }
-                    
+                    }), System.Windows.Threading.DispatcherPriority.Background);
+
                     Motion.Play(RootGrid, 0);
                 }), System.Windows.Threading.DispatcherPriority.ContextIdle);
             };
@@ -263,6 +267,11 @@ namespace SmartTags.UI
         {
             var option = e.AddedItems.Count > 0 ? e.AddedItems[0] as TagCategoryOption : null;
             TagTypes.Clear();
+            // Direction tag types belong to the previous category; the keyword matches them again below
+            LeftTagTypes.Clear();
+            RightTagTypes.Clear();
+            UpTagTypes.Clear();
+            DownTagTypes.Clear();
 
             // Reset wire checkbox on every category change
             if (TreatWireAsDetailLineCheckBox != null)
@@ -353,6 +362,8 @@ namespace SmartTags.UI
             {
                 ApplySavedTagTypeSelection();
             }
+
+            AutoApplyDirectionTagTypes();
         }
 
         private void WireDiagnosticButton_Click(object sender, RoutedEventArgs e)
@@ -476,6 +487,35 @@ namespace SmartTags.UI
             _isUpdatingPlacementDirection = false;
         }
 
+
+        // A segment cannot be cleared by clicking it again: with nothing chosen the tool would still place to the right.
+        private void PlacementDirection_Unchecked(object sender, RoutedEventArgs e)
+        {
+            if (_isUpdatingPlacementDirection)
+            {
+                return;
+            }
+
+            if (PlacementUpCheckBox?.IsChecked != true && PlacementDownCheckBox?.IsChecked != true &&
+                PlacementLeftCheckBox?.IsChecked != true && PlacementRightCheckBox?.IsChecked != true)
+            {
+                ((CheckBox)sender).IsChecked = true;
+            }
+        }
+
+        // Same for the retag mode: with neither chosen, retag would silently ask for confirmation.
+        private void RetagExecutionMode_Unchecked(object sender, RoutedEventArgs e)
+        {
+            if (_isUpdatingRetagMode)
+            {
+                return;
+            }
+
+            if (RetagFullyAutomaticCheckBox?.IsChecked != true && RetagUserConfirmationCheckBox?.IsChecked != true)
+            {
+                ((CheckBox)sender).IsChecked = true;
+            }
+        }
 
         private void AnchorPoint_Checked(object sender, RoutedEventArgs e)
         {
@@ -646,6 +686,10 @@ namespace SmartTags.UI
             _tagPlacementHandler.AttachedLength = attachedLength;
             _tagPlacementHandler.FreeLength = freeLength;
             _tagPlacementHandler.Orientation = orientation;
+            _tagPlacementHandler.AnchorPoint = GetAnchorPoint();
+            _tagPlacementHandler.SkipIfAlreadyTagged = SkipIfTaggedCheckBox?.IsChecked == true;
+            _tagPlacementHandler.TagCategoryId = categoryOption.TagCategoryId;
+            _tagPlacementHandler.LeaderEndCondition = GetLeaderEndCondition();
             _tagPlacementHandler.Angle = angleRadians;
 
             // Configure collision detection
@@ -736,6 +780,45 @@ namespace SmartTags.UI
             }
 
             return PlacementDirection.Right;
+        }
+
+        private RadioButton[] GetAnchorRadios()
+        {
+            // Same order as the AnchorPoint enum
+            return new[]
+            {
+                AnchorCenterRadio, AnchorTopLeftRadio, AnchorTopCenterRadio, AnchorTopRightRadio, AnchorLeftCenterRadio,
+                AnchorRightCenterRadio, AnchorBottomLeftRadio, AnchorBottomCenterRadio, AnchorBottomRightRadio
+            };
+        }
+
+        private Services.AnchorPoint GetAnchorPoint()
+        {
+            var radios = GetAnchorRadios();
+            for (int i = 0; i < radios.Length; i++)
+            {
+                if (radios[i]?.IsChecked == true)
+                {
+                    return (Services.AnchorPoint)i;
+                }
+            }
+
+            return Services.AnchorPoint.Center;
+        }
+
+        private void SetAnchorPoint(Services.AnchorPoint anchorPoint)
+        {
+            var radio = GetAnchorRadios()[(int)anchorPoint];
+            if (radio != null)
+            {
+                radio.IsChecked = true;
+            }
+        }
+
+        private LeaderEndCondition GetLeaderEndCondition()
+        {
+            var leaderType = LeaderTypeComboBox?.SelectedItem as LeaderTypeOption;
+            return leaderType == null || leaderType.IsAttachedEnd ? LeaderEndCondition.Attached : LeaderEndCondition.Free;
         }
 
         private bool TryParseLength(string text, out double length, out string error)
@@ -989,16 +1072,129 @@ namespace SmartTags.UI
             }
         }
 
+        /// <summary>
+        /// Closing with settings that differ from the shown preset asks what to do with the changes, like switching
+        /// presets: Save stores them in the preset, Don't save restores the preset's values (so the next session
+        /// starts from the preset), Cancel keeps the window open.
+        /// </summary>
+        private void TagPlacementWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            if (_closeConfirmed)
+            {
+                return;
+            }
+
+            // Another sheet is waiting for an answer: that comes first.
+            if (SheetHost.Visibility == System.Windows.Visibility.Visible)
+            {
+                e.Cancel = true;
+                return;
+            }
+
+            var presetName = PresetComboBox?.SelectedItem as string;
+            if (string.IsNullOrEmpty(presetName) || !HasUnsavedChanges(presetName))
+            {
+                return;
+            }
+
+            e.Cancel = true;
+            ShowSheet($"Save changes to '{presetName}'?",
+                $"The current settings differ from the preset '{presetName}'.",
+                NoticeKind.Warning, "Save", "Cancel", null,
+                (save, _) =>
+                {
+                    if (!save)
+                    {
+                        return; // Cancel: keep the window open
+                    }
+
+                    SavePreset(presetName, false);
+                    CloseConfirmed();
+                },
+                "Don't save", () =>
+                {
+                    // The session settings are written from the preset after the regular save on close
+                    _restorePresetOnClose = presetName;
+                    CloseConfirmed();
+                });
+        }
+
+        /// <summary>
+        /// Preset value name to session setting key, for "Don't save" on close: the next session then starts from the
+        /// preset exactly as it is stored, including values that are not saved on close (detail lines).
+        /// </summary>
+        private static readonly KeyValuePair<string, string>[] PresetToSessionKeys =
+        {
+            new KeyValuePair<string, string>("CategoryId", SelectedCategoryKey),
+            new KeyValuePair<string, string>("TagTypeName", SelectedTagTypeKey),
+            new KeyValuePair<string, string>("DirectionKeyword", DirectionKeywordKey),
+            new KeyValuePair<string, string>("HasLeader", HasLeaderKey),
+            new KeyValuePair<string, string>("LeaderLength", LeaderLengthKey),
+            new KeyValuePair<string, string>("LeaderType", LeaderTypeKey),
+            new KeyValuePair<string, string>("Orientation", OrientationKey),
+            new KeyValuePair<string, string>("Angle", AngleKey),
+            new KeyValuePair<string, string>("DetectElementRotation", DetectRotationKey),
+            new KeyValuePair<string, string>("PlacementDirection", PlacementDirectionKey),
+            new KeyValuePair<string, string>("AnchorPoint", AnchorPointKey),
+            new KeyValuePair<string, string>("EnableCollisionDetection", CollisionDetectionEnabledKey),
+            new KeyValuePair<string, string>("CollisionGap", CollisionGapKey),
+            new KeyValuePair<string, string>("MinimumOffset", MinimumOffsetKey),
+            new KeyValuePair<string, string>("RetagFullyAutomatic", RetagExecutionModeKey),
+            new KeyValuePair<string, string>("SkipIfTagged", SkipIfTaggedKey),
+            new KeyValuePair<string, string>("DetailLineItemTypeName", DetailLineItemTypeNameKey),
+            new KeyValuePair<string, string>("DetailLineOffset", DetailLineOffsetKey),
+            new KeyValuePair<string, string>("DetailLineDirection", DetailLineDirectionKey),
+            new KeyValuePair<string, string>("DetailLineAlignToLine", DetailLineAlignKey)
+        };
+
+        private void WritePresetToSession(string presetName)
+        {
+            try
+            {
+                var config = LoadConfig();
+                var preset = GetStoredPresets(config)?[presetName] as JObject;
+                if (preset == null)
+                {
+                    return;
+                }
+
+                foreach (var pair in PresetToSessionKeys)
+                {
+                    var value = preset[pair.Key] as JValue;
+                    if (value != null)
+                    {
+                        config[pair.Value] = value.Value;
+                    }
+                }
+
+                SaveConfig(config);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private void CloseConfirmed()
+        {
+            _closeConfirmed = true;
+            Close();
+        }
+
         private void TagPlacementWindow_Closed(object sender, EventArgs e)
         {
             SaveSelectedCategory();
             SaveSelectedTagType();
             SaveLeaderSettings();
             SavePlacementDirection();
+            SavePlacementOptions();
             SaveCollisionSettings();
             SaveRetagExecutionMode();
             SaveCardStates();
             SaveWindowPosition();
+            if (_restorePresetOnClose != null)
+            {
+                WritePresetToSession(_restorePresetOnClose);
+            }
             _statusTimer?.Stop();
         }
 
@@ -1045,6 +1241,7 @@ namespace SmartTags.UI
         }
 
         private Action<bool, string> _sheetClosed;
+        private Action _sheetTertiaryChosen;
         private IInputElement _focusBeforeSheet;
 
         /// <summary>
@@ -1061,11 +1258,11 @@ namespace SmartTags.UI
         /// primary button stays disabled until the text is not empty.
         /// </summary>
         private void ShowSheet(string title, string message, NoticeKind kind, string primaryText, string secondaryText,
-            string inputPlaceholder, Action<bool, string> onClosed)
+            string inputPlaceholder, Action<bool, string> onClosed, string tertiaryText = null, Action onTertiary = null)
         {
             if (!Dispatcher.CheckAccess())
             {
-                Dispatcher.BeginInvoke(new Action(() => ShowSheet(title, message, kind, primaryText, secondaryText, inputPlaceholder, onClosed)));
+                Dispatcher.BeginInvoke(new Action(() => ShowSheet(title, message, kind, primaryText, secondaryText, inputPlaceholder, onClosed, tertiaryText, onTertiary)));
                 return;
             }
 
@@ -1075,6 +1272,7 @@ namespace SmartTags.UI
             }
 
             _sheetClosed = onClosed;
+            _sheetTertiaryChosen = onTertiary;
 
             SheetTitle.Text = title ?? string.Empty;
             SheetTitle.Visibility = string.IsNullOrEmpty(title) ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
@@ -1101,6 +1299,8 @@ namespace SmartTags.UI
             SheetPrimary.IsEnabled = true;
             SheetSecondary.Content = secondaryText;
             SheetSecondary.Visibility = secondaryText != null ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+            SheetTertiary.Content = tertiaryText;
+            SheetTertiary.Visibility = tertiaryText != null ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
 
             var hasInput = inputPlaceholder != null;
             SheetInput.Visibility = hasInput ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
@@ -1118,7 +1318,7 @@ namespace SmartTags.UI
             }), DispatcherPriority.Input);
         }
 
-        private void CloseSheet(bool primary)
+        private void CloseSheet(bool primary, bool tertiary = false)
         {
             if (SheetHost.Visibility != System.Windows.Visibility.Visible)
             {
@@ -1126,8 +1326,10 @@ namespace SmartTags.UI
             }
 
             var callback = _sheetClosed;
+            var tertiaryCallback = _sheetTertiaryChosen;
             var text = SheetInput.Text?.Trim();
             _sheetClosed = null;
+            _sheetTertiaryChosen = null;
             SheetHost.Visibility = System.Windows.Visibility.Collapsed;
 
             var restore = _focusBeforeSheet as UIElement;
@@ -1137,8 +1339,17 @@ namespace SmartTags.UI
                 restore.Focus();
             }
 
-            callback?.Invoke(primary, text);
+            if (tertiary)
+            {
+                tertiaryCallback?.Invoke();
+            }
+            else
+            {
+                callback?.Invoke(primary, text);
+            }
         }
+
+        private void SheetTertiary_Click(object sender, RoutedEventArgs e) => CloseSheet(false, true);
 
         private void OnSheetPreviewKeyDown(object sender, KeyEventArgs e)
         {
@@ -1306,6 +1517,71 @@ namespace SmartTags.UI
 
                 config[LeaderLengthKey] = leaderLength;
                 config[AngleKey] = angle;
+                SaveConfig(config);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>
+        /// Restores the placement options not covered by the leader/direction/collision settings.
+        /// Runs after the leader and orientation lists are filled.
+        /// </summary>
+        private void LoadPlacementOptions()
+        {
+            var config = LoadConfig();
+
+            if (TryGetBool(config, HasLeaderKey, out var hasLeader))
+            {
+                LeaderLineCheckBox.IsChecked = hasLeader;
+            }
+
+            if (TryGetString(config, LeaderTypeKey, out var leaderType))
+            {
+                var match = LeaderTypes.FirstOrDefault(option => option.Name == leaderType);
+                if (match != null)
+                {
+                    LeaderTypeComboBox.SelectedItem = match;
+                }
+            }
+
+            if (TryGetString(config, OrientationKey, out var orientation))
+            {
+                var match = OrientationOptions.FirstOrDefault(option => option.Name == orientation);
+                if (match != null)
+                {
+                    OrientationComboBox.SelectedItem = match;
+                }
+            }
+
+            if (TryGetBool(config, DetectRotationKey, out var detectRotation))
+            {
+                DetectRotationCheckBox.IsChecked = detectRotation;
+            }
+
+            if (TryGetString(config, AnchorPointKey, out var anchor) && Enum.TryParse<Services.AnchorPoint>(anchor, true, out var anchorPoint))
+            {
+                SetAnchorPoint(anchorPoint);
+            }
+
+            if (TryGetBool(config, SkipIfTaggedKey, out var skipIfTagged))
+            {
+                SkipIfTaggedCheckBox.IsChecked = skipIfTagged;
+            }
+        }
+
+        private void SavePlacementOptions()
+        {
+            try
+            {
+                var config = LoadConfig();
+                config[HasLeaderKey] = LeaderLineCheckBox?.IsChecked == true;
+                config[LeaderTypeKey] = (LeaderTypeComboBox?.SelectedItem as LeaderTypeOption)?.Name ?? "Attached end";
+                config[OrientationKey] = (OrientationComboBox?.SelectedItem as OrientationOption)?.Name ?? "Horizontal";
+                config[DetectRotationKey] = DetectRotationCheckBox?.IsChecked == true;
+                config[AnchorPointKey] = GetAnchorPoint().ToString();
+                config[SkipIfTaggedKey] = SkipIfTaggedCheckBox?.IsChecked == true;
                 SaveConfig(config);
             }
             catch (Exception)
@@ -1754,7 +2030,9 @@ namespace SmartTags.UI
                 DetectElementRotation = DetectRotationCheckBox?.IsChecked == true,
                 HasLeader = LeaderLineCheckBox?.IsChecked == true,
                 Orientation = (OrientationComboBox?.SelectedItem as OrientationOption)?.Orientation ?? TagOrientation.Horizontal,
-                EnableCollisionDetection = CollisionDetectionCheckBox?.IsChecked == true
+                EnableCollisionDetection = CollisionDetectionCheckBox?.IsChecked == true,
+                AnchorPoint = GetAnchorPoint(),
+                LeaderEndCondition = GetLeaderEndCondition()
             };
 
             if (!TryParseAngle(AngleTextBox?.Text, out var angleRadians, out var angleError))
@@ -2228,6 +2506,8 @@ namespace SmartTags.UI
                 _activeSelectionHandler.MinimumOffsetMillimeters = minimumOffsetMm;
             }
 
+            _activeSelectionHandler.AnchorPoint = GetAnchorPoint();
+            _activeSelectionHandler.LeaderEndCondition = GetLeaderEndCondition();
             _activeSelectionHandler.DirectionResolver = GetDirectionResolver();
         }
 
@@ -2487,9 +2767,11 @@ namespace SmartTags.UI
                 {
                     if (Presets.Contains(selectedPreset))
                     {
-                        _isLoadingPreset = true;
+                        // Show which preset the settings came from, but keep the last session's values (restored
+                        // separately): re-applying the preset would undo changes made after it was picked.
+                        _showPresetWithoutApplying = true;
                         PresetComboBox.SelectedItem = selectedPreset;
-                        // Note: _isLoadingPreset is reset at the end of LoadPreset()
+                        _showPresetWithoutApplying = false;
                     }
                 }
             }
@@ -2517,10 +2799,25 @@ namespace SmartTags.UI
             ShowSheet("Save preset", "Saves the current settings under a name you can pick from the Preset list.",
                 NoticeKind.Info, "Save", "Cancel", "Preset name", (save, name) =>
                 {
-                    if (save && !string.IsNullOrEmpty(name))
+                    if (!save || string.IsNullOrEmpty(name))
                     {
-                        SavePreset(name);
+                        return;
                     }
+
+                    if (Presets.Contains(name))
+                    {
+                        ShowSheet("Replace preset?", $"A preset named '{name}' already exists. Replace it with the current settings?",
+                            NoticeKind.Warning, "Replace", "Cancel", null, (replace, _) =>
+                            {
+                                if (replace)
+                                {
+                                    SavePreset(name);
+                                }
+                            });
+                        return;
+                    }
+
+                    SavePreset(name);
                 });
         }
 
@@ -2594,7 +2891,7 @@ namespace SmartTags.UI
             try
             {
                 var config = LoadConfig();
-                var presets = config.TryGetValue("Presets", out var value) ? value as JObject : null;
+                var presets = GetStoredPresets(config);
                 var settings = presets?[presetName] as JObject;
                 if (settings == null)
                 {
@@ -2687,7 +2984,7 @@ namespace SmartTags.UI
             try
             {
                 var config = LoadConfig();
-                var presets = config.TryGetValue("Presets", out var value) ? value as JObject : null;
+                var presets = GetStoredPresets(config);
                 presets = presets ?? new JObject();
                 presets[presetName] = settings;
                 config["Presets"] = presets;
@@ -2716,6 +3013,20 @@ namespace SmartTags.UI
             }
         }
 
+        private void SelectByName(System.Windows.Controls.ComboBox comboBox, IEnumerable<TagTypeOption> options, Dictionary<string, object> presetDict, string key)
+        {
+            if (!TryGetString(presetDict, key, out var name) || string.IsNullOrEmpty(name))
+            {
+                return;
+            }
+
+            var match = options.FirstOrDefault(option => option.DisplayName == name);
+            if (match != null)
+            {
+                comboBox.SelectedItem = match;
+            }
+        }
+
         private static string ToSafeFileName(string name)
         {
             foreach (var invalid in Path.GetInvalidFileNameChars())
@@ -2728,16 +3039,77 @@ namespace SmartTags.UI
 
         private void PresetComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            var presetName = PresetComboBox?.SelectedItem as string;
-            if (!string.IsNullOrWhiteSpace(presetName))
+            if (_showPresetWithoutApplying)
             {
-                LoadPreset(presetName);
-                
-                // Save selected preset (but not during initial load)
-                if (!_isLoadingPreset)
+                return;
+            }
+
+            var presetName = PresetComboBox?.SelectedItem as string;
+            if (string.IsNullOrWhiteSpace(presetName))
+            {
+                return;
+            }
+
+            // Switching away from a preset whose settings were changed would lose those changes: ask first.
+            var previousPreset = e.RemovedItems.Count > 0 ? e.RemovedItems[0] as string : null;
+            if (!string.IsNullOrEmpty(previousPreset) && previousPreset != presetName && HasUnsavedChanges(previousPreset))
+            {
+                ShowSheet($"Save changes to '{previousPreset}'?",
+                    $"The current settings differ from the preset '{previousPreset}'. Loading '{presetName}' replaces them.",
+                    NoticeKind.Warning, "Save", "Cancel", null,
+                    (save, _) =>
+                    {
+                        if (save)
+                        {
+                            SavePreset(previousPreset, false);
+                            ApplyPreset(presetName);
+                        }
+                        else
+                        {
+                            // Cancel: stay on the previous preset and keep the settings as they are
+                            _showPresetWithoutApplying = true;
+                            PresetComboBox.SelectedItem = previousPreset;
+                            _showPresetWithoutApplying = false;
+                        }
+                    },
+                    "Don't save", () => ApplyPreset(presetName));
+                return;
+            }
+
+            ApplyPreset(presetName);
+        }
+
+        private void ApplyPreset(string presetName)
+        {
+            LoadPreset(presetName);
+            SaveSelectedPreset(presetName);
+        }
+
+        private static JObject GetStoredPresets(Dictionary<string, object> config)
+        {
+            return config.TryGetValue("Presets", out var value) ? value as JObject : null;
+        }
+
+        /// <summary>
+        /// True when the settings on screen differ from the stored preset. Only the values the preset stores are
+        /// compared, so presets saved by an older version (fewer values) do not always count as changed.
+        /// </summary>
+        private bool HasUnsavedChanges(string presetName)
+        {
+            try
+            {
+                var stored = GetStoredPresets(LoadConfig())?[presetName] as JObject;
+                if (stored == null)
                 {
-                    SaveSelectedPreset(presetName);
+                    return false;
                 }
+
+                var current = BuildPresetSettings();
+                return stored.Properties().Any(property => !JToken.DeepEquals(property.Value, current[property.Name]));
+            }
+            catch (Exception)
+            {
+                return false;
             }
         }
 
@@ -2764,18 +3136,42 @@ namespace SmartTags.UI
                     return;
                 }
                 
+                _isLoadingPreset = true;
+                var presetDict = preset.ToObject<Dictionary<string, object>>();
+
+                // Direction Keyword - before the category, whose change matches the direction tag types by keyword
+                if (TryGetString(presetDict, "DirectionKeyword", out var keyword))
+                {
+                    DirectionKeywordTextBox.Text = keyword;
+                }
+
                 // Tag Selection - match by name since IDs are document-specific
-                if (TryGetString(preset.ToObject<Dictionary<string, object>>(), "CategoryName", out var categoryName))
+                if (TryGetString(presetDict, "CategoryName", out var categoryName))
                 {
                     var matchingCategory = TagCategories.FirstOrDefault(c => c.DisplayName == categoryName);
                     if (matchingCategory != null)
                     {
-                        CategoryComboBox.SelectedItem = matchingCategory;
-                        
-                        // Wait for category selection to populate TagTypes before setting tag type
-                        if (TryGetString(preset.ToObject<Dictionary<string, object>>(), "TagTypeName", out var tagTypeName))
+                        if (CategoryComboBox.SelectedItem == matchingCategory)
                         {
-                            Dispatcher.BeginInvoke(new Action(() =>
+                            // Same category: no selection change, so match the direction tag types for the new keyword here
+                            AutoApplyDirectionTagTypes();
+                        }
+                        else
+                        {
+                            CategoryComboBox.SelectedItem = matchingCategory;
+                        }
+
+                        // The category change resets this; restore it before the tag type (it changes the type list)
+                        if (TryGetBool(presetDict, "TreatWireAsDetailLine", out var treatWire) && TreatWireAsDetailLineCheckBox.Visibility == System.Windows.Visibility.Visible)
+                        {
+                            TreatWireAsDetailLineCheckBox.IsChecked = treatWire;
+                        }
+
+                        // Wait for category selection to populate TagTypes before setting tag type
+                        TryGetString(presetDict, "TagTypeName", out var tagTypeName);
+                        Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            if (!string.IsNullOrEmpty(tagTypeName))
                             {
                                 // Use SelectedIndex for more reliable selection
                                 for (int i = 0; i < TagTypes.Count; i++)
@@ -2787,20 +3183,19 @@ namespace SmartTags.UI
                                         break;
                                     }
                                 }
-                            }), System.Windows.Threading.DispatcherPriority.Background);
-                        }
+                            }
+
+                            // Direction tag types chosen by hand override the keyword match
+                            SelectByName(LeftTagTypeComboBox, LeftTagTypes, presetDict, "LeftTagTypeName");
+                            SelectByName(RightTagTypeComboBox, RightTagTypes, presetDict, "RightTagTypeName");
+                            SelectByName(UpTagTypeComboBox, UpTagTypes, presetDict, "UpTagTypeName");
+                            SelectByName(DownTagTypeComboBox, DownTagTypes, presetDict, "DownTagTypeName");
+                        }), System.Windows.Threading.DispatcherPriority.Background);
                     }
                 }
-                
-                // Direction Keyword
-                if (TryGetString(preset.ToObject<Dictionary<string, object>>(), "DirectionKeyword", out var keyword))
-                {
-                    DirectionKeywordTextBox.Text = keyword;
-                }
-                
+
                 // Placement Options
-                var presetDict = preset.ToObject<Dictionary<string, object>>();
-                
+
                 if (TryGetBool(presetDict, "HasLeader", out var hasLeader))
                 {
                     LeaderLineCheckBox.IsChecked = hasLeader;
@@ -2851,17 +3246,9 @@ namespace SmartTags.UI
                 // Anchor Point
                 if (TryGetString(presetDict, "AnchorPoint", out var anchorPoint))
                 {
-                    switch (anchorPoint)
+                    if (Enum.TryParse<Services.AnchorPoint>(anchorPoint, true, out var parsedAnchor))
                     {
-                        case "Center": AnchorCenterRadio.IsChecked = true; break;
-                        case "TopLeft": AnchorTopLeftRadio.IsChecked = true; break;
-                        case "TopCenter": AnchorTopCenterRadio.IsChecked = true; break;
-                        case "TopRight": AnchorTopRightRadio.IsChecked = true; break;
-                        case "LeftCenter": AnchorLeftCenterRadio.IsChecked = true; break;
-                        case "RightCenter": AnchorRightCenterRadio.IsChecked = true; break;
-                        case "BottomLeft": AnchorBottomLeftRadio.IsChecked = true; break;
-                        case "BottomCenter": AnchorBottomCenterRadio.IsChecked = true; break;
-                        case "BottomRight": AnchorBottomRightRadio.IsChecked = true; break;
+                        SetAnchorPoint(parsedAnchor);
                     }
                 }
                 
@@ -3182,123 +3569,129 @@ namespace SmartTags.UI
             }
         }
 
-        private void SavePreset(string presetName)
+        /// <summary>The current settings as a preset (also used to detect unsaved changes to the shown preset).</summary>
+        private JObject BuildPresetSettings()
+        {
+            var preset = new Dictionary<string, object>();
+            
+            // Tag Selection
+            var categoryOption = CategoryComboBox?.SelectedItem as TagCategoryOption;
+            if (categoryOption != null)
+            {
+                preset["CategoryId"] = GetElementIdValue(categoryOption.TagCategoryId);
+                preset["CategoryName"] = categoryOption.DisplayName;
+            }
+            
+            var tagTypeOption = TagTypeComboBox?.SelectedItem as TagTypeOption;
+            if (tagTypeOption != null)
+            {
+                preset["TagTypeId"] = GetElementIdValue(tagTypeOption.TypeId);
+                preset["TagTypeName"] = tagTypeOption.DisplayName;
+            }
+
+            if (TreatWireAsDetailLineCheckBox?.Visibility == System.Windows.Visibility.Visible)
+            {
+                preset["TreatWireAsDetailLine"] = TreatWireAsDetailLineCheckBox.IsChecked == true;
+            }
+            
+            // Direction Tag Override
+            preset["DirectionKeyword"] = DirectionKeywordTextBox?.Text ?? string.Empty;
+            
+            var leftTagType = LeftTagTypeComboBox?.SelectedItem as TagTypeOption;
+            if (leftTagType != null)
+            {
+                preset["LeftTagTypeId"] = GetElementIdValue(leftTagType.TypeId);
+                preset["LeftTagTypeName"] = leftTagType.DisplayName;
+            }
+            
+            var rightTagType = RightTagTypeComboBox?.SelectedItem as TagTypeOption;
+            if (rightTagType != null)
+            {
+                preset["RightTagTypeId"] = GetElementIdValue(rightTagType.TypeId);
+                preset["RightTagTypeName"] = rightTagType.DisplayName;
+            }
+            
+            var upTagType = UpTagTypeComboBox?.SelectedItem as TagTypeOption;
+            if (upTagType != null)
+            {
+                preset["UpTagTypeId"] = GetElementIdValue(upTagType.TypeId);
+                preset["UpTagTypeName"] = upTagType.DisplayName;
+            }
+            
+            var downTagType = DownTagTypeComboBox?.SelectedItem as TagTypeOption;
+            if (downTagType != null)
+            {
+                preset["DownTagTypeId"] = GetElementIdValue(downTagType.TypeId);
+                preset["DownTagTypeName"] = downTagType.DisplayName;
+            }
+            
+            // Placement Options
+            preset["HasLeader"] = LeaderLineCheckBox?.IsChecked == true;
+            preset["LeaderLength"] = LeaderLengthTextBox?.Text ?? "0";
+            
+            var leaderType = LeaderTypeComboBox?.SelectedItem as LeaderTypeOption;
+            preset["LeaderType"] = leaderType?.Name ?? "Attached end";
+            
+            var orientation = OrientationComboBox?.SelectedItem as OrientationOption;
+            preset["Orientation"] = orientation?.Name ?? "Horizontal";
+            
+            preset["Angle"] = AngleTextBox?.Text ?? "0";
+            preset["DetectElementRotation"] = DetectRotationCheckBox?.IsChecked == true;
+            
+            // Placement Direction
+            preset["PlacementDirection"] = GetPlacementDirection().ToString();
+            
+            // Anchor Point
+            preset["AnchorPoint"] = GetAnchorPoint().ToString();
+            
+            // Collision Detection
+            preset["EnableCollisionDetection"] = CollisionDetectionCheckBox?.IsChecked == true;
+            preset["CollisionGap"] = CollisionGapTextBox?.Text ?? "1";
+            preset["MinimumOffset"] = MinimumOffsetTextBox?.Text ?? "300";
+
+            // Detail Line Annotation
+            var detailItemTypeOption = TagTypeComboBox?.SelectedItem as TagTypeOption;
+            preset["DetailLineItemTypeName"] = detailItemTypeOption?.DisplayName ?? string.Empty;
+            preset["DetailLineOffset"] = DetailLineOffsetTextBox?.Text ?? "0";
+            preset["DetailLineDirection"] = GetDetailLineDirection().ToString();
+            preset["DetailLineAlignToLine"] = DetailLineAlignToLineCheckBox?.IsChecked == true;
+
+            // Retag/Normalize
+            preset["RetagFullyAutomatic"] = RetagFullyAutomaticCheckBox?.IsChecked == true;
+            
+            // Active Selection
+            preset["SkipIfTagged"] = SkipIfTaggedCheckBox?.IsChecked == true;
+            
+            return JObject.FromObject(preset);
+        }
+
+        /// <summary>Stores the current settings under <paramref name="presetName"/> (replacing a preset of that name).</summary>
+        private void SavePreset(string presetName, bool selectAfterSave = true)
         {
             try
             {
                 var config = LoadConfig();
-                
-                // Create preset object with all current settings
-                var preset = new Dictionary<string, object>();
-                
-                // Tag Selection
-                var categoryOption = CategoryComboBox?.SelectedItem as TagCategoryOption;
-                if (categoryOption != null)
-                {
-                    preset["CategoryId"] = GetElementIdValue(categoryOption.TagCategoryId);
-                    preset["CategoryName"] = categoryOption.DisplayName;
-                }
-                
-                var tagTypeOption = TagTypeComboBox?.SelectedItem as TagTypeOption;
-                if (tagTypeOption != null)
-                {
-                    preset["TagTypeId"] = GetElementIdValue(tagTypeOption.TypeId);
-                    preset["TagTypeName"] = tagTypeOption.DisplayName;
-                }
-                
-                // Direction Tag Override
-                preset["DirectionKeyword"] = DirectionKeywordTextBox?.Text ?? string.Empty;
-                
-                var leftTagType = LeftTagTypeComboBox?.SelectedItem as TagTypeOption;
-                if (leftTagType != null)
-                {
-                    preset["LeftTagTypeId"] = GetElementIdValue(leftTagType.TypeId);
-                }
-                
-                var rightTagType = RightTagTypeComboBox?.SelectedItem as TagTypeOption;
-                if (rightTagType != null)
-                {
-                    preset["RightTagTypeId"] = GetElementIdValue(rightTagType.TypeId);
-                }
-                
-                var upTagType = UpTagTypeComboBox?.SelectedItem as TagTypeOption;
-                if (upTagType != null)
-                {
-                    preset["UpTagTypeId"] = GetElementIdValue(upTagType.TypeId);
-                }
-                
-                var downTagType = DownTagTypeComboBox?.SelectedItem as TagTypeOption;
-                if (downTagType != null)
-                {
-                    preset["DownTagTypeId"] = GetElementIdValue(downTagType.TypeId);
-                }
-                
-                // Placement Options
-                preset["HasLeader"] = LeaderLineCheckBox?.IsChecked == true;
-                preset["LeaderLength"] = LeaderLengthTextBox?.Text ?? "0";
-                
-                var leaderType = LeaderTypeComboBox?.SelectedItem as LeaderTypeOption;
-                preset["LeaderType"] = leaderType?.Name ?? "Attached end";
-                
-                var orientation = OrientationComboBox?.SelectedItem as OrientationOption;
-                preset["Orientation"] = orientation?.Name ?? "Horizontal";
-                
-                preset["Angle"] = AngleTextBox?.Text ?? "0";
-                preset["DetectElementRotation"] = DetectRotationCheckBox?.IsChecked == true;
-                
-                // Placement Direction
-                preset["PlacementDirection"] = GetPlacementDirection().ToString();
-                
-                // Anchor Point
-                if (AnchorCenterRadio?.IsChecked == true) preset["AnchorPoint"] = "Center";
-                else if (AnchorTopLeftRadio?.IsChecked == true) preset["AnchorPoint"] = "TopLeft";
-                else if (AnchorTopCenterRadio?.IsChecked == true) preset["AnchorPoint"] = "TopCenter";
-                else if (AnchorTopRightRadio?.IsChecked == true) preset["AnchorPoint"] = "TopRight";
-                else if (AnchorLeftCenterRadio?.IsChecked == true) preset["AnchorPoint"] = "LeftCenter";
-                else if (AnchorRightCenterRadio?.IsChecked == true) preset["AnchorPoint"] = "RightCenter";
-                else if (AnchorBottomLeftRadio?.IsChecked == true) preset["AnchorPoint"] = "BottomLeft";
-                else if (AnchorBottomCenterRadio?.IsChecked == true) preset["AnchorPoint"] = "BottomCenter";
-                else if (AnchorBottomRightRadio?.IsChecked == true) preset["AnchorPoint"] = "BottomRight";
-                
-                // Collision Detection
-                preset["EnableCollisionDetection"] = CollisionDetectionCheckBox?.IsChecked == true;
-                preset["CollisionGap"] = CollisionGapTextBox?.Text ?? "1";
-                preset["MinimumOffset"] = MinimumOffsetTextBox?.Text ?? "300";
-
-                // Detail Line Annotation
-                var detailItemTypeOption = TagTypeComboBox?.SelectedItem as TagTypeOption;
-                preset["DetailLineItemTypeName"] = detailItemTypeOption?.DisplayName ?? string.Empty;
-                preset["DetailLineOffset"] = DetailLineOffsetTextBox?.Text ?? "0";
-                preset["DetailLineDirection"] = GetDetailLineDirection().ToString();
-                preset["DetailLineAlignToLine"] = DetailLineAlignToLineCheckBox?.IsChecked == true;
-
-                // Retag/Normalize
-                preset["RetagFullyAutomatic"] = RetagFullyAutomaticCheckBox?.IsChecked == true;
-                
-                // Active Selection
-                preset["SkipIfTagged"] = SkipIfTaggedCheckBox?.IsChecked == true;
-                
-                // Save preset to config
-                if (!config.ContainsKey("Presets"))
-                {
-                    config["Presets"] = new Dictionary<string, object>();
-                }
-                
-                var presets = config["Presets"] as JObject ?? new JObject();
-                presets[presetName] = JObject.FromObject(preset);
+                var presets = GetStoredPresets(config) ?? new JObject();
+                presets[presetName] = BuildPresetSettings();
                 config["Presets"] = presets;
-                
+
                 SaveConfig(config);
-                
+
                 // Add preset to combobox if not already there
                 if (!Presets.Contains(presetName))
                 {
                     Presets.Add(presetName);
                 }
-                
-                // Select the saved preset
-                PresetComboBox.SelectedItem = presetName;
-                
+
+                if (selectAfterSave)
+                {
+                    // The settings on screen already are the preset: show it without applying it again
+                    _showPresetWithoutApplying = true;
+                    PresetComboBox.SelectedItem = presetName;
+                    _showPresetWithoutApplying = false;
+                    SaveSelectedPreset(presetName);
+                }
+
                 ShowStatusMessage($"Preset '{presetName}' saved.");
             }
             catch (Exception ex)

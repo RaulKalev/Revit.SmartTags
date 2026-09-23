@@ -4,16 +4,16 @@ SmartTags is a Revit add-in that replaces the default tag placement workflow wit
 
 ## Features
 
-- **Smart Tag Placement**: Select an element category and matching tag family/type from the current model
+- **Smart Tag Placement**: Select an element category and matching tag family/type from the current model. The tag family + type list has a search field: type to filter (every word must match), Enter picks the first match, Down moves into the list, Esc closes
 - **Compact, Apple-style UI**: Shares the Sentinel design system (system type scale, dark and light appearance, collapsible section cards, native Windows frame). The Placement card groups direction (segmented control), leader, orientation and a 9-point anchor picker
 - **Active Selection Mode**: Click-to-tag workflow with duplicate detection and category filtering
 - **Direction-Based Tag Types**: Automatically select different tag types based on placement direction (Left/Right/Up/Down)
 - **Anchor Point Selection**: Choose from 9 anchor positions (corners, edges, center) for precise tag placement
 - **Leader Controls**: Configure leader usage, length (with mm suffix), type (Attached/Free end)
 - **Orientation & Rotation**: Set tag orientation and rotation angle (with ° suffix), with optional element rotation detection
-- **Presets**: Save the current settings under a name (`+`), delete the selected preset (`−`, asks first), export it to a JSON file, or load a preset from a JSON file (a preset with the same name can be replaced). Delete and export are available once a preset is selected
+- **Presets**: Save the current settings under a name (`+`), delete the selected preset (`−`, asks first), export it to a JSON file, or load a preset from a JSON file (a preset with the same name can be replaced). Delete and export are available once a preset is selected. When the window opens, the last session's settings are restored and the preset they came from is shown but not re-applied. Switching to another preset or closing the window while the settings differ from the shown preset asks whether to save the changes to it first (Save / Don't save / Cancel; Don't save on close restores the preset's values for next time), and saving under an existing name asks before replacing it
 - **User Preferences**: Persistent settings including window position, theme, card expansion states, and all placement parameters
-- **Batch Operations**: Tag all elements or selected elements with the same settings
+- **Batch Operations**: Tag all elements or selected elements with the same settings. With `Skip tagged` on, elements that already have a tag of the chosen category in the view are left out (Tag all, Tag selected and Active Selection)
 - **Collision Detection**: Intelligent collision avoidance system with spatial indexing:
   - Automatic tag size detection using actual bounding boxes
   - Post-creation validation and repositioning for optimal placement
