@@ -5,7 +5,7 @@ SmartTags is a Revit add-in that replaces the default tag placement workflow wit
 ## Features
 
 - **Smart Tag Placement**: Select an element category and matching tag family/type from the current model
-- **Unified Placement Controls**: Compact 4-column layout combining direction, anchor point, leader settings, and orientation in one card
+- **Compact, Apple-style UI**: Shares the Sentinel design system (system type scale, dark and light appearance, collapsible section cards, native Windows frame). The Placement card groups direction (segmented control), a 9-point anchor picker, leader and orientation
 - **Active Selection Mode**: Click-to-tag workflow with duplicate detection and category filtering
 - **Direction-Based Tag Types**: Automatically select different tag types based on placement direction (Left/Right/Up/Down)
 - **Anchor Point Selection**: Choose from 9 anchor positions (corners, edges, center) for precise tag placement
@@ -20,7 +20,8 @@ SmartTags is a Revit add-in that replaces the default tag placement workflow wit
   - Radial search algorithm finds the closest collision-free position
   - Deterministic fallback with least-overlap selection when no collision-free position exists
   - Works with all tagging workflows (batch, selection, active selection)
-- **Smooth Animations**: Card expansion/collapse animations (0.2s) with window auto-resize
+- **Subtle Motion**: Sections reveal with a short fade-and-settle and the window resizes to fit; motion falls back to fades when Windows animation effects are off
+- **In-Window Messages**: Validation messages, results and the preset name prompt appear in a sheet inside the window instead of separate dialogs; the result of the last placement shows in a feedback line above the action bar
 - **Window Position Memory**: Window reopens at the last saved position
 
 ## Supported Revit Versions
@@ -39,11 +40,11 @@ The add-in should also work with newer Revit versions as long as the API remains
    - For Revit 2026: Copy from `bin\Debug\net8.0-windows\` to `%APPDATA%\Autodesk\Revit\Addins\2026`
 3. Create an `.addin` manifest that loads `SmartTags.dll` and place it in the same addins folder
 4. Launch Revit; the SmartTags ribbon command opens the custom placement window
-5. Configure collision detection settings in the "Collision Detection" section:
+5. Configure collision detection settings in the "Collision avoidance" section:
    - Enable/disable collision avoidance
    - Set gap buffer between tags and obstacles (default: 1mm)
    - Configure minimum offset when leaders are disabled (default: 300mm)
-6. Use the `Tag all`/`Tag Selected` buttons to place tags according to your saved settings
+6. Use the `Tag all`/`Tag selected` buttons (or `Select` for Active Selection) to place tags according to your saved settings
 
 ## How Collision Detection Works
 

@@ -2,1040 +2,1026 @@
     x:Class="SmartTags.UI.TagPlacementWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:av="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
-    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:ui="clr-namespace:SmartTags.UI"
     Title="Smart Tags"
-    Width="540"
-    MinWidth="520"
-    MinHeight="281"
-    AllowsTransparency="True"
-    Background="Transparent"
-    Opacity="0"
+    Width="460"
+    Background="{DynamicResource Window.Background}"
+    ResizeMode="CanMinimize"
     SizeToContent="Height"
-    WindowStyle="None"
-    mc:Ignorable="av">
-    <Window.Style>
-        <Style TargetType="Window">
-            <Setter Property="Height" Value="Auto" />
-            <Style.Triggers>
-                <EventTrigger RoutedEvent="Window.SizeChanged">
-                    <BeginStoryboard>
-                        <Storyboard>
-                            <DoubleAnimation
-                                Storyboard.TargetProperty="Height"
-                                Duration="0:0:0.2"
-                                DecelerationRatio="0.6">
-                                <DoubleAnimation.EasingFunction>
-                                    <CubicEase EasingMode="EaseOut" />
-                                </DoubleAnimation.EasingFunction>
-                            </DoubleAnimation>
-                        </Storyboard>
-                    </BeginStoryboard>
-                </EventTrigger>
-            </Style.Triggers>
-        </Style>
-    </Window.Style>
+    TextOptions.TextFormattingMode="Display"
+    UseLayoutRounding="True">
+    <!--
+        Standard Windows frame (DWM shadow, Windows 11 rounded corners, Alt+Space, Win+arrows) with the caption area
+        drawn by SmartTags. No AllowsTransparency: layered windows are unstable inside Revit. Modeless: shown with Show().
+    -->
+    <WindowChrome.WindowChrome>
+        <WindowChrome
+            CaptionHeight="44"
+            CornerRadius="0"
+            GlassFrameThickness="0,0,0,1"
+            NonClientFrameEdges="None"
+            ResizeBorderThickness="0"
+            UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
     <Window.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary>
-                    <SolidColorBrush x:Key="PrimaryBackgroundBrush" Color="#FF1F1F1F" />
-                    <SolidColorBrush x:Key="SecondaryBackgroundBrush" Color="#FF292929" />
-                    <SolidColorBrush x:Key="BorderBrush" Color="#FF444444" />
-                    <SolidColorBrush x:Key="ForegroundBrush" Color="#EEEEEE" />
-                </ResourceDictionary>
-                <ResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.ComboBox.xaml" />
-                <ResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Dark.xaml" />
-                <ResourceDictionary Source="pack://application:,,,/SmartTags;component/UI/Themes/ElementStyles.xaml" />
+                <!--  The palette is swapped at runtime by LoadTheme(); styles use DynamicResource  -->
+                <ResourceDictionary Source="pack://application:,,,/SmartTags;component/UI/Themes/DarkTheme.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/SmartTags;component/UI/Themes/SmartTagsStyles.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Window.Resources>
 
-    <Grid Background="Transparent" ClipToBounds="True">
-        <Border
-            BorderBrush="{DynamicResource BorderBrush}"
-            BorderThickness="2"
-            ClipToBounds="True"
-            CornerRadius="10"
-            Opacity="0.7"
-            SnapsToDevicePixels="True">
-            <Border.Effect>
-                <BlurEffect KernelType="Gaussian" Radius="2" />
-            </Border.Effect>
-        </Border>
+    <Grid
+        x:Name="RootGrid"
+        Opacity="0"
+        TextElement.FontFamily="{StaticResource Font.Text}"
+        TextElement.FontSize="{StaticResource FontSize.Body}"
+        TextElement.Foreground="{DynamicResource Text.Primary}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
 
-        <Border
-            Margin="2"
-            Background="{DynamicResource PrimaryBackgroundBrush}"
-            CornerRadius="10">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="30" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-
-                <ui:TitleBar
-                    Grid.Row="0"
-                    Foreground="{DynamicResource ForegroundBrush}"
-                    Loaded="TitleBar_Loaded" />
-
-                <ToggleButton
-                    x:Name="ThemeToggleButton"
-                    Grid.Row="0"
-                    Width="28"
-                    Height="15.5"
-                    Margin="0,0,70,0"
-                    HorizontalAlignment="Right"
-                    Background="Transparent"
-                    BorderBrush="Transparent"
+        <!--  ============ Title area (draggable caption) ============  -->
+        <DockPanel Height="44" Background="Transparent">
+            <StackPanel
+                VerticalAlignment="Top"
+                DockPanel.Dock="Right"
+                Orientation="Horizontal">
+                <Button
+                    x:Name="ThemeButton"
+                    Margin="0,0,4,0"
+                    VerticalAlignment="Center"
+                    AutomationProperties.Name="Switch between dark and light appearance"
                     Click="ToggleTheme_Click"
-                    IsChecked="True"
-                    ToolTip="Toggle Theme">
-                    <ToggleButton.Template>
-                        <ControlTemplate TargetType="{x:Type ToggleButton}">
-                            <Grid Background="Transparent">
-                                <materialDesign:PackIcon
-                                    x:Name="ThemeToggleIcon"
-                                    Width="30"
-                                    Height="30"
-                                    HorizontalAlignment="Center"
-                                    VerticalAlignment="Center"
-                                    Foreground="{DynamicResource IconBrush}"
-                                    Kind="ToggleSwitchOffOutline" />
-                            </Grid>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsChecked" Value="True">
-                                    <Setter TargetName="ThemeToggleIcon" Property="Kind" Value="ToggleSwitchOffOutline" />
-                                </Trigger>
-                                <Trigger Property="IsChecked" Value="False">
-                                    <Setter TargetName="ThemeToggleIcon" Property="Kind" Value="ToggleSwitchOutline" />
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </ToggleButton.Template>
-                </ToggleButton>
+                    Style="{StaticResource Button.Icon}"
+                    ToolTip="Switch between dark and light appearance"
+                    WindowChrome.IsHitTestVisibleInChrome="True">
+                    <materialDesign:PackIcon
+                        x:Name="ThemeIcon"
+                        Width="16"
+                        Height="16"
+                        Kind="WeatherNight" />
+                </Button>
+                <Button
+                    AutomationProperties.Name="Minimize"
+                    Click="Minimize_Click"
+                    Style="{StaticResource CaptionButton}"
+                    ToolTip="Minimize">
+                    <materialDesign:PackIcon
+                        Width="14"
+                        Height="14"
+                        Kind="WindowMinimize" />
+                </Button>
+                <Button
+                    AutomationProperties.Name="Close"
+                    Click="Close_Click"
+                    Style="{StaticResource CaptionCloseButton}"
+                    ToolTip="Close">
+                    <materialDesign:PackIcon
+                        Width="14"
+                        Height="14"
+                        Kind="WindowClose" />
+                </Button>
+            </StackPanel>
 
-                <Grid Grid.Row="1" Margin="12,12,12,6">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-
-                    <!--  Preset Selection Row  -->
-                    <Grid Grid.Row="0" Margin="2,0,0,10">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock
-                            Grid.Column="0"
-                            Margin="0,0,10,0"
-                            VerticalAlignment="Center"
-                            FontSize="12"
-                            Foreground="{DynamicResource ForegroundBrush}"
-                            Text="Preset" />
-                        <ComboBox
-                            x:Name="PresetComboBox"
-                            Grid.Column="1"
-                            Height="32"
-                            ItemsSource="{Binding Presets}"
-                            DisplayMemberPath="."
-                            SelectionChanged="PresetComboBox_SelectionChanged"
-                            Style="{StaticResource DarkThemeComboBox}">
-                        </ComboBox>
-                        <Button
-                            Grid.Column="2"
-                            Width="32"
-                            Height="32"
-                            Margin="8,0,0,0"
-                            Padding="0"
-                            Click="AddPresetButton_Click"
-                            Style="{StaticResource CustomActionButtonStyle}"
-                            ToolTip="Add Preset">
-                            <materialDesign:PackIcon
-                                Width="18"
-                                Height="18"
-                                Kind="Plus" />
-                        </Button>
-                        <Button
-                            Grid.Column="3"
-                            Width="32"
-                            Height="32"
-                            Margin="4,0,0,0"
-                            Padding="0"
-                            Style="{StaticResource CustomActionButtonStyle}"
-                            ToolTip="Delete Preset">
-                            <materialDesign:PackIcon
-                                Width="18"
-                                Height="18"
-                                Kind="Minus" />
-                        </Button>
-                        <Button
-                            Grid.Column="4"
-                            Width="32"
-                            Height="32"
-                            Margin="4,0,0,0"
-                            Padding="0"
-                            Style="{StaticResource CustomActionButtonStyle}"
-                            ToolTip="Load Preset">
-                            <materialDesign:PackIcon
-                                Width="18"
-                                Height="18"
-                                Kind="FolderOpen" />
-                        </Button>
-                        <Button
-                            Grid.Column="5"
-                            Width="32"
-                            Height="32"
-                            Margin="4,0,0,0"
-                            Padding="0"
-                            Style="{StaticResource CustomActionButtonStyle}"
-                            ToolTip="Export Preset">
-                            <materialDesign:PackIcon
-                                Width="18"
-                                Height="18"
-                                Kind="Export" />
-                        </Button>
-                    </Grid>
-
-                    <!--  Scrollable Content Area  -->
-                    <ScrollViewer
-                        Grid.Row="1"
-                        MaxHeight="1500"
-                        HorizontalScrollBarVisibility="Disabled"
-                        PreviewMouseDown="Background_PreviewMouseDown"
-                        VerticalScrollBarVisibility="Auto">
-                        <StackPanel Margin="0,0,0,0">
-                            <!--  Tag Selection Card  -->
-                            <Expander
-                                x:Name="TagSelectionExpander"
-                                Collapsed="CardExpander_Toggled"
-                                Expanded="CardExpander_Toggled"
-                                Header="Tag Selection"
-                                IsExpanded="True"
-                                Style="{StaticResource CollapsibleCardExpander}">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="150" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-
-                                    <TextBlock
-                                        Grid.Row="0"
-                                        Grid.Column="0"
-                                        Margin="0,0,10,8"
-                                        Style="{StaticResource CustomTextBlock}"
-                                        Text="Element category" />
-                                    <ComboBox
-                                        x:Name="CategoryComboBox"
-                                        Grid.Row="0"
-                                        Grid.Column="1"
-                                        Margin="0,0,0,8"
-                                        DisplayMemberPath="DisplayName"
-                                        ItemsSource="{Binding TagCategories}"
-                                        SelectionChanged="CategoryComboBox_SelectionChanged"
-                                        Style="{StaticResource DarkThemeComboBox}" />
-
-                                    <TextBlock
-                                        x:Name="TagTypeLabelText"
-                                        Grid.Row="1"
-                                        Grid.Column="0"
-                                        Margin="0,0,10,8"
-                                        Style="{StaticResource CustomTextBlock}"
-                                        Text="Tag family + type" />
-                                    <ComboBox
-                                        x:Name="TagTypeComboBox"
-                                        Grid.Row="1"
-                                        Grid.Column="1"
-                                        Margin="0,0,0,8"
-                                        DisplayMemberPath="DisplayName"
-                                        ItemsSource="{Binding TagTypes}"
-                                        Style="{StaticResource DarkThemeComboBox}" />
-
-                                    <CheckBox
-                                        x:Name="IncludeLinksCheckBox"
-                                        Grid.Row="2"
-                                        Grid.Column="0"
-                                        Grid.ColumnSpan="2"
-                                        Content="Include elements from links"
-                                        IsChecked="False"
-                                        Style="{StaticResource CustomCheckboxStyle}">
-                                        <CheckBox.LayoutTransform>
-                                            <ScaleTransform ScaleX="0.85" ScaleY="0.85" />
-                                        </CheckBox.LayoutTransform>
-                                    </CheckBox>
-
-                                    <!--  Wire treat-as-detail-lines toggle (shown only when Wire category is selected)  -->
-                                    <CheckBox
-                                        x:Name="TreatWireAsDetailLineCheckBox"
-                                        Grid.Row="3"
-                                        Grid.Column="0"
-                                        Grid.ColumnSpan="2"
-                                        Margin="0,0,0,8"
-                                        Content="Treat as detail lines"
-                                        IsChecked="False"
-                                        Style="{StaticResource CustomCheckboxStyle}"
-                                        Visibility="Collapsed"
-                                        Checked="TreatWireAsDetailLine_Changed"
-                                        Unchecked="TreatWireAsDetailLine_Changed">
-                                        <CheckBox.LayoutTransform>
-                                            <ScaleTransform ScaleX="0.85" ScaleY="0.85" />
-                                        </CheckBox.LayoutTransform>
-                                    </CheckBox>
-
-                                    <!--  Wire diagnostic button (dev only, hidden by default)  -->
-                                    <Button
-                                        x:Name="WireDiagnosticButton"
-                                        Grid.Row="3"
-                                        Grid.Column="1"
-                                        Margin="4,0,0,8"
-                                        Padding="4,2"
-                                        HorizontalAlignment="Right"
-                                        Content="Diagnose"
-                                        Visibility="Collapsed"
-                                        Click="WireDiagnosticButton_Click" />
-
-                                    <!--  Detail Lines rows (shown only when Detail Lines category or wire+treat-as-detail-lines is selected)  -->
-                                    <TextBlock
-                                        x:Name="DetailLineOffsetLabel"
-                                        Grid.Row="4"
-                                        Grid.Column="0"
-                                        Margin="0,8,10,8"
-                                        Style="{StaticResource CustomTextBlock}"
-                                        Text="Offset (mm)"
-                                        Visibility="Collapsed" />
-                                    <Grid
-                                        x:Name="DetailLineOffsetGrid"
-                                        Grid.Row="4"
-                                        Grid.Column="1"
-                                        Margin="0,8,0,8"
-                                        Visibility="Collapsed">
-                                        <TextBox
-                                            x:Name="DetailLineOffsetTextBox"
-                                            Padding="5,0,23,0"
-                                            HorizontalAlignment="Stretch"
-                                            materialDesign:HintAssist.Hint="Offset"
-                                            Style="{StaticResource CustomTextBoxStyle}"
-                                            Text="0"
-                                            TextAlignment="Center" />
-                                        <TextBlock
-                                            Margin="0,0,8,0"
-                                            HorizontalAlignment="Right"
-                                            VerticalAlignment="Center"
-                                            Foreground="{DynamicResource ForegroundBrush}"
-                                            IsHitTestVisible="False"
-                                            Text="mm" />
-                                    </Grid>
-
-                                    <TextBlock
-                                        x:Name="DetailLineDirectionLabel"
-                                        Grid.Row="5"
-                                        Grid.Column="0"
-                                        Margin="0,0,10,8"
-                                        Style="{StaticResource CustomTextBlock}"
-                                        Text="Offset direction"
-                                        Visibility="Collapsed" />
-                                    <StackPanel
-                                        x:Name="DetailLineDirectionPanel"
-                                        Grid.Row="5"
-                                        Grid.Column="1"
-                                        Margin="0,0,0,8"
-                                        Orientation="Horizontal"
-                                        Visibility="Collapsed">
-                                        <RadioButton
-                                            x:Name="DetailLineOffsetUpRadio"
-                                            Margin="0,0,10,0"
-                                            Content="Up"
-                                            Foreground="{DynamicResource ForegroundBrush}"
-                                            GroupName="DetailLineOffsetDir" />
-                                        <RadioButton
-                                            x:Name="DetailLineOffsetDownRadio"
-                                            Margin="0,0,10,0"
-                                            Content="Down"
-                                            Foreground="{DynamicResource ForegroundBrush}"
-                                            GroupName="DetailLineOffsetDir" />
-                                        <RadioButton
-                                            x:Name="DetailLineOffsetLeftRadio"
-                                            Margin="0,0,10,0"
-                                            Content="Left"
-                                            Foreground="{DynamicResource ForegroundBrush}"
-                                            GroupName="DetailLineOffsetDir" />
-                                        <RadioButton
-                                            x:Name="DetailLineOffsetRightRadio"
-                                            Content="Right"
-                                            Foreground="{DynamicResource ForegroundBrush}"
-                                            GroupName="DetailLineOffsetDir"
-                                            IsChecked="True" />
-                                    </StackPanel>
-
-                                    <CheckBox
-                                        x:Name="DetailLineAlignToLineCheckBox"
-                                        Grid.Row="6"
-                                        Grid.Column="0"
-                                        Grid.ColumnSpan="2"
-                                        Margin="0,0,0,8"
-                                        Content="Align item to line direction"
-                                        IsChecked="False"
-                                        Style="{StaticResource CustomCheckboxStyle}"
-                                        Visibility="Collapsed">
-                                        <CheckBox.LayoutTransform>
-                                            <ScaleTransform ScaleX="0.85" ScaleY="0.85" />
-                                        </CheckBox.LayoutTransform>
-                                    </CheckBox>
-                                </Grid>
-                            </Expander>
-
-                            <!--  Direction Tag Override Card  -->
-                            <Expander
-                                x:Name="DirectionTagOverrideExpander"
-                                Collapsed="CardExpander_Toggled"
-                                Expanded="CardExpander_Toggled"
-                                Header="Direction Tag Override"
-                                Style="{StaticResource CollapsibleCardExpander}">
-                                <Grid>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="150" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-
-                                    <TextBlock
-                                        Grid.Row="0"
-                                        Grid.Column="0"
-                                        Margin="0,0,10,8"
-                                        VerticalAlignment="Center"
-                                        Style="{StaticResource CustomTextBlock}"
-                                        Text="Keyword" />
-                                    <TextBox
-                                        x:Name="DirectionKeywordTextBox"
-                                        Grid.Row="0"
-                                        Grid.Column="1"
-                                        Margin="0,0,8,8"
-                                        HorizontalAlignment="Stretch"
-                                        materialDesign:HintAssist.Hint="e.g. Tag"
-                                        Style="{StaticResource CustomTextBoxStyle}"
-                                        Text=""
-                                        TextChanged="DirectionKeywordTextBox_TextChanged" />
-                                    <Button
-                                        x:Name="DirectionCheckButton"
-                                        Grid.Row="0"
-                                        Grid.Column="2"
-                                        Width="70"
-                                        Height="32"
-                                        Margin="0,0,0,8"
-                                        Click="DirectionCheckButton_Click"
-                                        Content="Check"
-                                        FontSize="10"
-                                        Style="{StaticResource CustomActionButtonStyle}" />
-
-                                    <TextBlock
-                                        Grid.Row="1"
-                                        Grid.Column="0"
-                                        Margin="0,0,10,8"
-                                        Style="{StaticResource CustomTextBlock}"
-                                        Text="Left tag" />
-                                    <ComboBox
-                                        x:Name="LeftTagTypeComboBox"
-                                        Grid.Row="1"
-                                        Grid.Column="1"
-                                        Grid.ColumnSpan="2"
-                                        Margin="0,0,0,8"
-                                        DisplayMemberPath="DisplayName"
-                                        ItemsSource="{Binding LeftTagTypes}"
-                                        Style="{StaticResource DarkThemeComboBox}" />
-
-                                    <TextBlock
-                                        Grid.Row="2"
-                                        Grid.Column="0"
-                                        Margin="0,0,10,8"
-                                        Style="{StaticResource CustomTextBlock}"
-                                        Text="Right tag" />
-                                    <ComboBox
-                                        x:Name="RightTagTypeComboBox"
-                                        Grid.Row="2"
-                                        Grid.Column="1"
-                                        Grid.ColumnSpan="2"
-                                        Margin="0,0,0,8"
-                                        DisplayMemberPath="DisplayName"
-                                        ItemsSource="{Binding RightTagTypes}"
-                                        Style="{StaticResource DarkThemeComboBox}" />
-
-                                    <TextBlock
-                                        Grid.Row="3"
-                                        Grid.Column="0"
-                                        Margin="0,0,10,8"
-                                        Style="{StaticResource CustomTextBlock}"
-                                        Text="Up tag" />
-                                    <ComboBox
-                                        x:Name="UpTagTypeComboBox"
-                                        Grid.Row="3"
-                                        Grid.Column="1"
-                                        Grid.ColumnSpan="2"
-                                        Margin="0,0,0,8"
-                                        DisplayMemberPath="DisplayName"
-                                        ItemsSource="{Binding UpTagTypes}"
-                                        Style="{StaticResource DarkThemeComboBox}" />
-
-                                    <TextBlock
-                                        Grid.Row="4"
-                                        Grid.Column="0"
-                                        Margin="0,0,10,0"
-                                        Style="{StaticResource CustomTextBlock}"
-                                        Text="Down tag" />
-                                    <ComboBox
-                                        x:Name="DownTagTypeComboBox"
-                                        Grid.Row="4"
-                                        Grid.Column="1"
-                                        Grid.ColumnSpan="2"
-                                        DisplayMemberPath="DisplayName"
-                                        ItemsSource="{Binding DownTagTypes}"
-                                        Style="{StaticResource DarkThemeComboBox}" />
-                                </Grid>
-                            </Expander>
-
-                            <!--  Placement Options Card  -->
-                            <Expander
-                                x:Name="PlacementOptionsExpander"
-                                Collapsed="CardExpander_Toggled"
-                                Expanded="CardExpander_Toggled"
-                                Header="Placement options"
-                                IsExpanded="True"
-                                Style="{StaticResource CollapsibleCardExpander}">
-                                <Grid>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="0.5*" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-
-                                    <!--  Column 1: Direction Checkboxes  -->
-                                    <StackPanel
-                                        Grid.Row="0"
-                                        Grid.Column="0"
-                                        Margin="0,0,10,0"
-                                        VerticalAlignment="Top">
-                                        <TextBlock
-                                            Margin="0,0,0,8"
-                                            FontWeight="Bold"
-                                            Style="{StaticResource CustomTextBlock}"
-                                            Text="Direction" />
-
-                                        <CheckBox
-                                            x:Name="PlacementUpCheckBox"
-                                            Margin="0,0,0,4"
-                                            Checked="PlacementDirection_Checked"
-                                            Content="Up"
-                                            Style="{StaticResource CustomCheckboxStyle}">
-                                            <CheckBox.LayoutTransform>
-                                                <ScaleTransform ScaleX="0.85" ScaleY="0.85" />
-                                            </CheckBox.LayoutTransform>
-                                        </CheckBox>
-
-                                        <CheckBox
-                                            x:Name="PlacementDownCheckBox"
-                                            Margin="0,0,0,4"
-                                            Checked="PlacementDirection_Checked"
-                                            Content="Down"
-                                            Style="{StaticResource CustomCheckboxStyle}">
-                                            <CheckBox.LayoutTransform>
-                                                <ScaleTransform ScaleX="0.85" ScaleY="0.85" />
-                                            </CheckBox.LayoutTransform>
-                                        </CheckBox>
-
-                                        <CheckBox
-                                            x:Name="PlacementLeftCheckBox"
-                                            Margin="0,0,0,4"
-                                            Checked="PlacementDirection_Checked"
-                                            Content="Left"
-                                            Style="{StaticResource CustomCheckboxStyle}">
-                                            <CheckBox.LayoutTransform>
-                                                <ScaleTransform ScaleX="0.85" ScaleY="0.85" />
-                                            </CheckBox.LayoutTransform>
-                                        </CheckBox>
-
-                                        <CheckBox
-                                            x:Name="PlacementRightCheckBox"
-                                            Checked="PlacementDirection_Checked"
-                                            Content="Right"
-                                            Style="{StaticResource CustomCheckboxStyle}">
-                                            <CheckBox.LayoutTransform>
-                                                <ScaleTransform ScaleX="0.85" ScaleY="0.85" />
-                                            </CheckBox.LayoutTransform>
-                                        </CheckBox>
-                                    </StackPanel>
-
-                                    <!--  Column 2: Anchor Point Selection  -->
-                                    <StackPanel
-                                        Grid.Row="0"
-                                        Grid.Column="1"
-                                        Margin="0,0,10,0"
-                                        VerticalAlignment="Top">
-                                        <TextBlock
-                                            Margin="0,0,0,8"
-                                            FontWeight="Bold"
-                                            Style="{StaticResource CustomTextBlock}"
-                                            Text="Anchor" />
-
-                                        <Grid Width="100" Height="100">
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="*" />
-                                                <RowDefinition Height="*" />
-                                                <RowDefinition Height="*" />
-                                            </Grid.RowDefinitions>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-
-                                            <!--  Background Rectangle  -->
-                                            <Border
-                                                Grid.RowSpan="3"
-                                                Grid.ColumnSpan="3"
-                                                Background="{DynamicResource SecondaryBackgroundBrush}"
-                                                BorderBrush="{DynamicResource BorderBrush}"
-                                                BorderThickness="1"
-                                                CornerRadius="4" />
-
-                                            <!--  Top Row  -->
-                                            <RadioButton
-                                                x:Name="AnchorTopLeftRadio"
-                                                Grid.Row="0"
-                                                Grid.Column="0"
-                                                HorizontalAlignment="Left"
-                                                VerticalAlignment="Top"
-                                                Checked="AnchorPoint_Checked"
-                                                GroupName="AnchorPoint">
-                                                <RadioButton.LayoutTransform>
-                                                    <ScaleTransform ScaleX="0.9" ScaleY="0.9" />
-                                                </RadioButton.LayoutTransform>
-                                            </RadioButton>
-
-                                            <RadioButton
-                                                x:Name="AnchorTopCenterRadio"
-                                                Grid.Row="0"
-                                                Grid.Column="1"
-                                                HorizontalAlignment="Center"
-                                                VerticalAlignment="Top"
-                                                Checked="AnchorPoint_Checked"
-                                                GroupName="AnchorPoint">
-                                                <RadioButton.LayoutTransform>
-                                                    <ScaleTransform ScaleX="0.9" ScaleY="0.9" />
-                                                </RadioButton.LayoutTransform>
-                                            </RadioButton>
-
-                                            <RadioButton
-                                                x:Name="AnchorTopRightRadio"
-                                                Grid.Row="0"
-                                                Grid.Column="2"
-                                                HorizontalAlignment="Right"
-                                                VerticalAlignment="Top"
-                                                Checked="AnchorPoint_Checked"
-                                                GroupName="AnchorPoint">
-                                                <RadioButton.LayoutTransform>
-                                                    <ScaleTransform ScaleX="0.9" ScaleY="0.9" />
-                                                </RadioButton.LayoutTransform>
-                                            </RadioButton>
-
-                                            <!--  Middle Row  -->
-                                            <RadioButton
-                                                x:Name="AnchorLeftCenterRadio"
-                                                Grid.Row="1"
-                                                Grid.Column="0"
-                                                HorizontalAlignment="Left"
-                                                VerticalAlignment="Center"
-                                                Checked="AnchorPoint_Checked"
-                                                GroupName="AnchorPoint">
-                                                <RadioButton.LayoutTransform>
-                                                    <ScaleTransform ScaleX="0.9" ScaleY="0.9" />
-                                                </RadioButton.LayoutTransform>
-                                            </RadioButton>
-
-                                            <RadioButton
-                                                x:Name="AnchorCenterRadio"
-                                                Grid.Row="1"
-                                                Grid.Column="1"
-                                                HorizontalAlignment="Center"
-                                                VerticalAlignment="Center"
-                                                Checked="AnchorPoint_Checked"
-                                                GroupName="AnchorPoint"
-                                                IsChecked="True">
-                                                <RadioButton.LayoutTransform>
-                                                    <ScaleTransform ScaleX="0.9" ScaleY="0.9" />
-                                                </RadioButton.LayoutTransform>
-                                            </RadioButton>
-
-                                            <RadioButton
-                                                x:Name="AnchorRightCenterRadio"
-                                                Grid.Row="1"
-                                                Grid.Column="2"
-                                                HorizontalAlignment="Right"
-                                                VerticalAlignment="Center"
-                                                Checked="AnchorPoint_Checked"
-                                                GroupName="AnchorPoint">
-                                                <RadioButton.LayoutTransform>
-                                                    <ScaleTransform ScaleX="0.9" ScaleY="0.9" />
-                                                </RadioButton.LayoutTransform>
-                                            </RadioButton>
-
-                                            <!--  Bottom Row  -->
-                                            <RadioButton
-                                                x:Name="AnchorBottomLeftRadio"
-                                                Grid.Row="2"
-                                                Grid.Column="0"
-                                                HorizontalAlignment="Left"
-                                                VerticalAlignment="Bottom"
-                                                Checked="AnchorPoint_Checked"
-                                                GroupName="AnchorPoint">
-                                                <RadioButton.LayoutTransform>
-                                                    <ScaleTransform ScaleX="0.9" ScaleY="0.9" />
-                                                </RadioButton.LayoutTransform>
-                                            </RadioButton>
-
-                                            <RadioButton
-                                                x:Name="AnchorBottomCenterRadio"
-                                                Grid.Row="2"
-                                                Grid.Column="1"
-                                                HorizontalAlignment="Center"
-                                                VerticalAlignment="Bottom"
-                                                Checked="AnchorPoint_Checked"
-                                                GroupName="AnchorPoint">
-                                                <RadioButton.LayoutTransform>
-                                                    <ScaleTransform ScaleX="0.9" ScaleY="0.9" />
-                                                </RadioButton.LayoutTransform>
-                                            </RadioButton>
-
-                                            <RadioButton
-                                                x:Name="AnchorBottomRightRadio"
-                                                Grid.Row="2"
-                                                Grid.Column="2"
-                                                HorizontalAlignment="Right"
-                                                VerticalAlignment="Bottom"
-                                                Checked="AnchorPoint_Checked"
-                                                GroupName="AnchorPoint">
-                                                <RadioButton.LayoutTransform>
-                                                    <ScaleTransform ScaleX="0.9" ScaleY="0.9" />
-                                                </RadioButton.LayoutTransform>
-                                            </RadioButton>
-                                        </Grid>
-                                    </StackPanel>
-
-                                    <!--  Column 3: Leader  -->
-                                    <StackPanel
-                                        Grid.Row="0"
-                                        Grid.Column="2"
-                                        Margin="0,0,10,0"
-                                        VerticalAlignment="Top">
-                                        <TextBlock
-                                            Margin="0,0,0,8"
-                                            FontWeight="Bold"
-                                            Style="{StaticResource CustomTextBlock}"
-                                            Text="Leader" />
-
-                                        <ComboBox
-                                            x:Name="LeaderTypeComboBox"
-                                            Margin="0,0,0,4"
-                                            DisplayMemberPath="Name"
-                                            ItemsSource="{Binding LeaderTypes}"
-                                            Style="{StaticResource DarkThemeComboBox}" />
-
-                                        <Grid Margin="0,0,0,4">
-                                            <TextBox
-                                                x:Name="LeaderLengthTextBox"
-                                                Padding="5,0,23,0"
-                                                HorizontalAlignment="Stretch"
-                                                materialDesign:HintAssist.Hint="Length"
-                                                Style="{StaticResource CustomTextBoxStyle}"
-                                                Text="0"
-                                                TextAlignment="Center" />
-                                            <TextBlock
-                                                Margin="0,0,8,0"
-                                                HorizontalAlignment="Right"
-                                                VerticalAlignment="Center"
-                                                Foreground="{DynamicResource ForegroundBrush}"
-                                                IsHitTestVisible="False"
-                                                Text="mm" />
-                                        </Grid>
-
-                                        <CheckBox
-                                            x:Name="LeaderLineCheckBox"
-                                            Checked="LeaderLineCheckBox_Toggled"
-                                            Content="Enabled"
-                                            IsChecked="True"
-                                            Style="{StaticResource CustomCheckboxStyle}"
-                                            Unchecked="LeaderLineCheckBox_Toggled">
-                                            <CheckBox.LayoutTransform>
-                                                <ScaleTransform ScaleX="0.85" ScaleY="0.85" />
-                                            </CheckBox.LayoutTransform>
-                                        </CheckBox>
-                                    </StackPanel>
-
-                                    <!--  Column 4: Orientation  -->
-                                    <StackPanel
-                                        Grid.Row="0"
-                                        Grid.Column="3"
-                                        VerticalAlignment="Top">
-                                        <TextBlock
-                                            Margin="0,0,0,8"
-                                            FontWeight="Bold"
-                                            Style="{StaticResource CustomTextBlock}"
-                                            Text="Orientation" />
-
-                                        <ComboBox
-                                            x:Name="OrientationComboBox"
-                                            Margin="0,0,0,4"
-                                            DisplayMemberPath="Name"
-                                            ItemsSource="{Binding OrientationOptions}"
-                                            Style="{StaticResource DarkThemeComboBox}" />
-
-                                        <Grid Margin="0,0,0,4">
-                                            <TextBox
-                                                x:Name="AngleTextBox"
-                                                Padding="5,0,18,0"
-                                                HorizontalAlignment="Stretch"
-                                                materialDesign:HintAssist.Hint="Angle"
-                                                Style="{StaticResource CustomTextBoxStyle}"
-                                                Text="0"
-                                                TextAlignment="Center" />
-                                            <TextBlock
-                                                Margin="0,0,8,0"
-                                                HorizontalAlignment="Right"
-                                                VerticalAlignment="Center"
-                                                Foreground="{DynamicResource ForegroundBrush}"
-                                                IsHitTestVisible="False"
-                                                Text="°" />
-                                        </Grid>
-
-                                        <CheckBox
-                                            x:Name="DetectRotationCheckBox"
-                                            Content="Detect Rotation"
-                                            IsChecked="False"
-                                            Style="{StaticResource CustomCheckboxStyle}">
-                                            <CheckBox.LayoutTransform>
-                                                <ScaleTransform ScaleX="0.85" ScaleY="0.85" />
-                                            </CheckBox.LayoutTransform>
-                                        </CheckBox>
-                                    </StackPanel>
-                                </Grid>
-                            </Expander>
-
-                            <!--  Execution Card - Collision Detection  -->
-                            <Expander
-                                x:Name="CollisionDetectionExpander"
-                                Collapsed="CardExpander_Toggled"
-                                Expanded="CardExpander_Toggled"
-                                Header="Collision Detection"
-                                Style="{StaticResource CollapsibleCardExpander}">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="150" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-
-                                    <TextBlock
-                                        Grid.Row="0"
-                                        Grid.Column="0"
-                                        Margin="0,0,10,8"
-                                        Style="{StaticResource CustomTextBlock}"
-                                        Text="Avoid collisions" />
-                                    <CheckBox
-                                        x:Name="CollisionDetectionCheckBox"
-                                        Grid.Row="0"
-                                        Grid.Column="1"
-                                        Margin="0,0,0,8"
-                                        Checked="CollisionDetectionCheckBox_Toggled"
-                                        Content="Enabled"
-                                        IsChecked="False"
-                                        Style="{StaticResource CustomCheckBox}"
-                                        Unchecked="CollisionDetectionCheckBox_Toggled" />
-
-                                    <TextBlock
-                                        Grid.Row="1"
-                                        Grid.Column="0"
-                                        Margin="0,0,10,8"
-                                        Style="{StaticResource CustomTextBlock}"
-                                        Text="Gap (mm)" />
-                                    <TextBox
-                                        x:Name="CollisionGapTextBox"
-                                        Grid.Row="1"
-                                        Grid.Column="1"
-                                        Width="200"
-                                        Margin="0,0,0,8"
-                                        HorizontalAlignment="Left"
-                                        materialDesign:HintAssist.Hint="Gap in millimeters"
-                                        IsEnabled="False"
-                                        Style="{StaticResource CustomTextBoxStyle}"
-                                        Text="1" />
-
-                                    <TextBlock
-                                        Grid.Row="2"
-                                        Grid.Column="0"
-                                        Margin="0,0,10,0"
-                                        Style="{StaticResource CustomTextBlock}"
-                                        Text="Minimum offset (mm)" />
-                                    <TextBox
-                                        x:Name="MinimumOffsetTextBox"
-                                        Grid.Row="2"
-                                        Grid.Column="1"
-                                        Width="200"
-                                        HorizontalAlignment="Left"
-                                        materialDesign:HintAssist.Hint="Offset when no leader"
-                                        Style="{StaticResource CustomTextBoxStyle}"
-                                        Text="300" />
-                                </Grid>
-                            </Expander>
-
-                            <!--  Retag / Normalize Card  -->
-                            <Expander
-                                x:Name="RetagNormalizeExpander"
-                                Collapsed="CardExpander_Toggled"
-                                Expanded="CardExpander_Toggled"
-                                Header="Retag / Normalize"
-                                Style="{StaticResource CollapsibleCardExpander}">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-
-                                    <StackPanel Grid.Column="0" Margin="0,0,15,0">
-                                        <TextBlock
-                                            Margin="0,0,0,6"
-                                            FontSize="11"
-                                            Style="{StaticResource CustomTextBlock}"
-                                            Text="Execution mode" />
-
-                                        <CheckBox
-                                            x:Name="RetagFullyAutomaticCheckBox"
-                                            Margin="0,0,0,4"
-                                            Checked="RetagExecutionMode_Changed"
-                                            Content="Fully automatic"
-                                            IsChecked="True"
-                                            Style="{StaticResource CustomCheckboxStyle}">
-                                            <CheckBox.LayoutTransform>
-                                                <ScaleTransform ScaleX="0.85" ScaleY="0.85" />
-                                            </CheckBox.LayoutTransform>
-                                        </CheckBox>
-                                        <CheckBox
-                                            x:Name="RetagUserConfirmationCheckBox"
-                                            Checked="RetagExecutionMode_Changed"
-                                            Content="User confirmation"
-                                            IsChecked="False"
-                                            Style="{StaticResource CustomCheckboxStyle}">
-                                            <CheckBox.LayoutTransform>
-                                                <ScaleTransform ScaleX="0.85" ScaleY="0.85" />
-                                            </CheckBox.LayoutTransform>
-                                        </CheckBox>
-                                    </StackPanel>
-
-                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                        <Button
-                                            Height="32"
-                                            Margin="0,0,0,8"
-                                            Click="RetagSelectedButton_Click"
-                                            Content="Retag Selected"
-                                            FontSize="12"
-                                            FontWeight="Bold"
-                                            Style="{StaticResource CustomActionButtonStyle}" />
-
-                                        <Button
-                                            Height="32"
-                                            Click="NormalizeViewButton_Click"
-                                            Content="Normalize View"
-                                            FontSize="12"
-                                            FontWeight="Bold"
-                                            Style="{StaticResource CustomActionButtonStyle}" />
-                                    </StackPanel>
-                                </Grid>
-                            </Expander>
-                        </StackPanel>
-                    </ScrollViewer>
-
-                    <!--  Bottom Action Buttons  -->
-                    <StackPanel
-                        Grid.Row="2"
-                        Margin="0,10,0,10"
+            <StackPanel
+                Margin="16,0,0,0"
+                VerticalAlignment="Center"
+                Orientation="Horizontal">
+                <Border
+                    Width="24"
+                    Height="24"
+                    VerticalAlignment="Center"
+                    Background="{DynamicResource Accent}"
+                    CornerRadius="7">
+                    <materialDesign:PackIcon
+                        Width="15"
+                        Height="15"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
-                        Orientation="Horizontal">
+                        Foreground="{DynamicResource Text.OnAccent}"
+                        Kind="TagMultipleOutline" />
+                </Border>
+                <TextBlock
+                    Margin="10,0,0,0"
+                    VerticalAlignment="Center"
+                    Style="{StaticResource Type.Title}"
+                    Text="Smart Tags" />
+            </StackPanel>
+        </DockPanel>
+
+        <!--  ============ Preset ============  -->
+        <Grid Grid.Row="1" Margin="16,2,16,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock
+                Margin="0,0,12,0"
+                Style="{StaticResource Type.Label}"
+                Text="Preset" />
+            <ComboBox
+                x:Name="PresetComboBox"
+                Grid.Column="1"
+                AutomationProperties.Name="Preset"
+                DisplayMemberPath="."
+                ItemsSource="{Binding Presets}"
+                SelectionChanged="PresetComboBox_SelectionChanged"
+                Style="{StaticResource Input.Combo}" />
+            <StackPanel
+                Grid.Column="2"
+                Margin="6,0,0,0"
+                VerticalAlignment="Center"
+                Orientation="Horizontal">
+                <Button
+                    AutomationProperties.Name="Save settings as preset"
+                    Click="AddPresetButton_Click"
+                    Style="{StaticResource Button.Icon}"
+                    ToolTip="Save the current settings as a preset">
+                    <materialDesign:PackIcon
+                        Width="16"
+                        Height="16"
+                        Kind="Plus" />
+                </Button>
+                <Button
+                    AutomationProperties.Name="Delete preset"
+                    Style="{StaticResource Button.Icon}"
+                    ToolTip="Delete preset">
+                    <materialDesign:PackIcon
+                        Width="16"
+                        Height="16"
+                        Kind="Minus" />
+                </Button>
+                <Button
+                    AutomationProperties.Name="Load preset"
+                    Style="{StaticResource Button.Icon}"
+                    ToolTip="Load preset">
+                    <materialDesign:PackIcon
+                        Width="16"
+                        Height="16"
+                        Kind="FolderOpenOutline" />
+                </Button>
+                <Button
+                    AutomationProperties.Name="Export preset"
+                    Style="{StaticResource Button.Icon}"
+                    ToolTip="Export preset">
+                    <materialDesign:PackIcon
+                        Width="16"
+                        Height="16"
+                        Kind="Export" />
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <!--  ============ Sections ============  -->
+        <ScrollViewer
+            Grid.Row="2"
+            Focusable="False"
+            HorizontalScrollBarVisibility="Disabled"
+            PreviewMouseDown="Background_PreviewMouseDown"
+            VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="16,0,16,4">
+
+                <!--  Tag selection  -->
+                <Expander
+                    x:Name="TagSelectionExpander"
+                    AutomationProperties.Name="Tag selection"
+                    Collapsed="CardExpander_Toggled"
+                    Expanded="CardExpander_Toggled"
+                    IsExpanded="True"
+                    Style="{StaticResource Section}">
+                    <Expander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="TagOutline" Style="{StaticResource SectionIcon}" />
+                            <TextBlock Text="Tag selection" />
+                        </StackPanel>
+                    </Expander.Header>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="{StaticResource Form.LabelWidth}" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Style="{StaticResource Type.Label}" Text="Element category" />
+                        <ComboBox
+                            x:Name="CategoryComboBox"
+                            Grid.Column="1"
+                            Margin="0,0,0,8"
+                            AutomationProperties.Name="Element category"
+                            DisplayMemberPath="DisplayName"
+                            ItemsSource="{Binding TagCategories}"
+                            SelectionChanged="CategoryComboBox_SelectionChanged"
+                            Style="{StaticResource Input.Combo}" />
+
+                        <TextBlock
+                            x:Name="TagTypeLabelText"
+                            Grid.Row="1"
+                            Style="{StaticResource Type.Label}"
+                            Text="Tag family + type" />
+                        <ComboBox
+                            x:Name="TagTypeComboBox"
+                            Grid.Row="1"
+                            Grid.Column="1"
+                            Margin="0,0,0,8"
+                            AutomationProperties.Name="Tag type"
+                            DisplayMemberPath="DisplayName"
+                            ItemsSource="{Binding TagTypes}"
+                            Style="{StaticResource Input.Combo}" />
+
                         <CheckBox
-                            x:Name="SkipIfTaggedCheckBox"
-                            Margin="0,0,15,0"
-                            VerticalAlignment="Center"
-                            Content="Skip Tagged"
+                            x:Name="IncludeLinksCheckBox"
+                            Grid.Row="2"
+                            Grid.Column="1"
+                            Margin="0,2,0,8"
+                            Content="Include elements from links"
+                            IsChecked="False"
+                            Style="{StaticResource Input.Check}" />
+
+                        <!--  Wire only: treat wires as detail lines  -->
+                        <CheckBox
+                            x:Name="TreatWireAsDetailLineCheckBox"
+                            Grid.Row="3"
+                            Grid.Column="1"
+                            Margin="0,2,0,8"
+                            Checked="TreatWireAsDetailLine_Changed"
+                            Content="Treat as detail lines"
+                            IsChecked="False"
+                            Style="{StaticResource Input.Check}"
+                            Unchecked="TreatWireAsDetailLine_Changed"
+                            Visibility="Collapsed" />
+                        <!--  Wire diagnostic (dev only, hidden by default)  -->
+                        <Button
+                            x:Name="WireDiagnosticButton"
+                            Grid.Row="3"
+                            Grid.Column="1"
+                            Height="{StaticResource Size.ControlSmall}"
+                            Margin="0,0,0,8"
+                            HorizontalAlignment="Right"
+                            Click="WireDiagnosticButton_Click"
+                            Content="Diagnose"
+                            Style="{StaticResource Button.Secondary}"
+                            Visibility="Collapsed" />
+
+                        <!--  Detail lines (Detail Lines category, or wires treated as detail lines)  -->
+                        <TextBlock
+                            x:Name="DetailLineOffsetLabel"
+                            Grid.Row="4"
+                            Style="{StaticResource Type.Label}"
+                            Text="Offset"
+                            Visibility="Collapsed" />
+                        <Grid
+                            x:Name="DetailLineOffsetGrid"
+                            Grid.Row="4"
+                            Grid.Column="1"
+                            Width="120"
+                            Margin="0,0,0,8"
+                            HorizontalAlignment="Left"
+                            Visibility="Collapsed">
+                            <TextBox
+                                x:Name="DetailLineOffsetTextBox"
+                                AutomationProperties.Name="Offset in millimetres"
+                                Style="{StaticResource Input.Number}"
+                                Tag="0"
+                                Text="0" />
+                            <TextBlock Style="{StaticResource Type.Unit}" Text="mm" />
+                        </Grid>
+
+                        <TextBlock
+                            x:Name="DetailLineDirectionLabel"
+                            Grid.Row="5"
+                            Style="{StaticResource Type.Label}"
+                            Text="Offset direction"
+                            Visibility="Collapsed" />
+                        <Border
+                            x:Name="DetailLineDirectionPanel"
+                            Grid.Row="5"
+                            Grid.Column="1"
+                            Margin="0,0,0,8"
+                            Style="{StaticResource Segmented}"
+                            Visibility="Collapsed">
+                            <UniformGrid Rows="1">
+                                <RadioButton
+                                    x:Name="DetailLineOffsetUpRadio"
+                                    Content="Up"
+                                    GroupName="DetailLineOffsetDir"
+                                    Style="{StaticResource Segment}" />
+                                <RadioButton
+                                    x:Name="DetailLineOffsetDownRadio"
+                                    Content="Down"
+                                    GroupName="DetailLineOffsetDir"
+                                    Style="{StaticResource Segment}" />
+                                <RadioButton
+                                    x:Name="DetailLineOffsetLeftRadio"
+                                    Content="Left"
+                                    GroupName="DetailLineOffsetDir"
+                                    Style="{StaticResource Segment}" />
+                                <RadioButton
+                                    x:Name="DetailLineOffsetRightRadio"
+                                    Content="Right"
+                                    GroupName="DetailLineOffsetDir"
+                                    IsChecked="True"
+                                    Style="{StaticResource Segment}" />
+                            </UniformGrid>
+                        </Border>
+
+                        <CheckBox
+                            x:Name="DetailLineAlignToLineCheckBox"
+                            Grid.Row="6"
+                            Grid.Column="1"
+                            Margin="0,2,0,8"
+                            Content="Align item to line direction"
+                            IsChecked="False"
+                            Style="{StaticResource Input.Check}"
+                            Visibility="Collapsed" />
+                    </Grid>
+                </Expander>
+
+                <!--  Direction tag override  -->
+                <Expander
+                    x:Name="DirectionTagOverrideExpander"
+                    AutomationProperties.Name="Direction tag override"
+                    Collapsed="CardExpander_Toggled"
+                    Expanded="CardExpander_Toggled"
+                    Style="{StaticResource Section}">
+                    <Expander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="SwapHorizontal" Style="{StaticResource SectionIcon}" />
+                            <TextBlock Text="Direction tag override" />
+                        </StackPanel>
+                    </Expander.Header>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="{StaticResource Form.LabelWidth}" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Style="{StaticResource Type.Label}" Text="Keyword" />
+                        <TextBox
+                            x:Name="DirectionKeywordTextBox"
+                            Grid.Column="1"
+                            Margin="0,0,8,8"
+                            AutomationProperties.Name="Direction keyword"
+                            Style="{StaticResource Input.Text}"
+                            Tag="e.g. Tag"
+                            Text=""
+                            TextChanged="DirectionKeywordTextBox_TextChanged" />
+                        <Button
+                            x:Name="DirectionCheckButton"
+                            Grid.Column="2"
+                            Margin="0,0,0,8"
+                            Click="DirectionCheckButton_Click"
+                            Content="Check"
+                            Style="{StaticResource Button.Secondary}"
+                            ToolTip="Find the Left / Right / Up / Down tag types for this keyword" />
+
+                        <TextBlock
+                            Grid.Row="1"
+                            Style="{StaticResource Type.Label}"
+                            Text="Left" />
+                        <ComboBox
+                            x:Name="LeftTagTypeComboBox"
+                            Grid.Row="1"
+                            Grid.Column="1"
+                            Grid.ColumnSpan="2"
+                            Margin="0,0,0,8"
+                            AutomationProperties.Name="Left tag type"
+                            DisplayMemberPath="DisplayName"
+                            ItemsSource="{Binding LeftTagTypes}"
+                            Style="{StaticResource Input.Combo}" />
+
+                        <TextBlock
+                            Grid.Row="2"
+                            Style="{StaticResource Type.Label}"
+                            Text="Right" />
+                        <ComboBox
+                            x:Name="RightTagTypeComboBox"
+                            Grid.Row="2"
+                            Grid.Column="1"
+                            Grid.ColumnSpan="2"
+                            Margin="0,0,0,8"
+                            AutomationProperties.Name="Right tag type"
+                            DisplayMemberPath="DisplayName"
+                            ItemsSource="{Binding RightTagTypes}"
+                            Style="{StaticResource Input.Combo}" />
+
+                        <TextBlock
+                            Grid.Row="3"
+                            Style="{StaticResource Type.Label}"
+                            Text="Up" />
+                        <ComboBox
+                            x:Name="UpTagTypeComboBox"
+                            Grid.Row="3"
+                            Grid.Column="1"
+                            Grid.ColumnSpan="2"
+                            Margin="0,0,0,8"
+                            AutomationProperties.Name="Up tag type"
+                            DisplayMemberPath="DisplayName"
+                            ItemsSource="{Binding UpTagTypes}"
+                            Style="{StaticResource Input.Combo}" />
+
+                        <TextBlock
+                            Grid.Row="4"
+                            Style="{StaticResource Type.Label}"
+                            Text="Down" />
+                        <ComboBox
+                            x:Name="DownTagTypeComboBox"
+                            Grid.Row="4"
+                            Grid.Column="1"
+                            Grid.ColumnSpan="2"
+                            Margin="0,0,0,8"
+                            AutomationProperties.Name="Down tag type"
+                            DisplayMemberPath="DisplayName"
+                            ItemsSource="{Binding DownTagTypes}"
+                            Style="{StaticResource Input.Combo}" />
+                    </Grid>
+                </Expander>
+
+                <!--  Placement  -->
+                <Expander
+                    x:Name="PlacementOptionsExpander"
+                    AutomationProperties.Name="Placement"
+                    Collapsed="CardExpander_Toggled"
+                    Expanded="CardExpander_Toggled"
+                    IsExpanded="True"
+                    Style="{StaticResource Section}">
+                    <Expander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="CrosshairsGps" Style="{StaticResource SectionIcon}" />
+                            <TextBlock Text="Placement" />
+                        </StackPanel>
+                    </Expander.Header>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="{StaticResource Form.LabelWidth}" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <!--  Direction: at most one (exclusive in code); clicking the active one clears it  -->
+                        <TextBlock Style="{StaticResource Type.Label}" Text="Direction" />
+                        <Border
+                            Grid.Column="1"
+                            Margin="0,0,0,8"
+                            AutomationProperties.Name="Placement direction"
+                            Style="{StaticResource Segmented}">
+                            <UniformGrid Rows="1">
+                                <CheckBox
+                                    x:Name="PlacementUpCheckBox"
+                                    Checked="PlacementDirection_Checked"
+                                    Content="Up"
+                                    Style="{StaticResource Segment}" />
+                                <CheckBox
+                                    x:Name="PlacementDownCheckBox"
+                                    Checked="PlacementDirection_Checked"
+                                    Content="Down"
+                                    Style="{StaticResource Segment}" />
+                                <CheckBox
+                                    x:Name="PlacementLeftCheckBox"
+                                    Checked="PlacementDirection_Checked"
+                                    Content="Left"
+                                    Style="{StaticResource Segment}" />
+                                <CheckBox
+                                    x:Name="PlacementRightCheckBox"
+                                    Checked="PlacementDirection_Checked"
+                                    Content="Right"
+                                    Style="{StaticResource Segment}" />
+                            </UniformGrid>
+                        </Border>
+
+                        <!--  Anchor: nine points on the tag outline  -->
+                        <TextBlock
+                            Grid.Row="1"
+                            Margin="0,6,12,8"
+                            VerticalAlignment="Top"
+                            Style="{StaticResource Type.Label}"
+                            Text="Anchor" />
+                        <Border
+                            Grid.Row="1"
+                            Grid.Column="1"
+                            Margin="0,0,0,8"
+                            Padding="6"
+                            HorizontalAlignment="Left"
+                            AutomationProperties.Name="Anchor point"
+                            Style="{StaticResource InsetCard}">
+                            <Grid Width="104" Height="66">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <!--  Tag outline through the dot centres  -->
+                                <Rectangle
+                                    Grid.RowSpan="3"
+                                    Grid.ColumnSpan="3"
+                                    Margin="11"
+                                    RadiusX="2"
+                                    RadiusY="2"
+                                    Stroke="{DynamicResource Text.Tertiary}"
+                                    StrokeDashArray="3 3"
+                                    StrokeThickness="1" />
+
+                                <RadioButton
+                                    x:Name="AnchorTopLeftRadio"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Top"
+                                    AutomationProperties.Name="Top left"
+                                    Checked="AnchorPoint_Checked"
+                                    GroupName="AnchorPoint"
+                                    Style="{StaticResource AnchorDot}"
+                                    ToolTip="Top left" />
+                                <RadioButton
+                                    x:Name="AnchorTopCenterRadio"
+                                    Grid.Column="1"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Top"
+                                    AutomationProperties.Name="Top centre"
+                                    Checked="AnchorPoint_Checked"
+                                    GroupName="AnchorPoint"
+                                    Style="{StaticResource AnchorDot}"
+                                    ToolTip="Top centre" />
+                                <RadioButton
+                                    x:Name="AnchorTopRightRadio"
+                                    Grid.Column="2"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Top"
+                                    AutomationProperties.Name="Top right"
+                                    Checked="AnchorPoint_Checked"
+                                    GroupName="AnchorPoint"
+                                    Style="{StaticResource AnchorDot}"
+                                    ToolTip="Top right" />
+
+                                <RadioButton
+                                    x:Name="AnchorLeftCenterRadio"
+                                    Grid.Row="1"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.Name="Middle left"
+                                    Checked="AnchorPoint_Checked"
+                                    GroupName="AnchorPoint"
+                                    Style="{StaticResource AnchorDot}"
+                                    ToolTip="Middle left" />
+                                <RadioButton
+                                    x:Name="AnchorCenterRadio"
+                                    Grid.Row="1"
+                                    Grid.Column="1"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.Name="Centre"
+                                    Checked="AnchorPoint_Checked"
+                                    GroupName="AnchorPoint"
+                                    IsChecked="True"
+                                    Style="{StaticResource AnchorDot}"
+                                    ToolTip="Centre" />
+                                <RadioButton
+                                    x:Name="AnchorRightCenterRadio"
+                                    Grid.Row="1"
+                                    Grid.Column="2"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.Name="Middle right"
+                                    Checked="AnchorPoint_Checked"
+                                    GroupName="AnchorPoint"
+                                    Style="{StaticResource AnchorDot}"
+                                    ToolTip="Middle right" />
+
+                                <RadioButton
+                                    x:Name="AnchorBottomLeftRadio"
+                                    Grid.Row="2"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Bottom"
+                                    AutomationProperties.Name="Bottom left"
+                                    Checked="AnchorPoint_Checked"
+                                    GroupName="AnchorPoint"
+                                    Style="{StaticResource AnchorDot}"
+                                    ToolTip="Bottom left" />
+                                <RadioButton
+                                    x:Name="AnchorBottomCenterRadio"
+                                    Grid.Row="2"
+                                    Grid.Column="1"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Bottom"
+                                    AutomationProperties.Name="Bottom centre"
+                                    Checked="AnchorPoint_Checked"
+                                    GroupName="AnchorPoint"
+                                    Style="{StaticResource AnchorDot}"
+                                    ToolTip="Bottom centre" />
+                                <RadioButton
+                                    x:Name="AnchorBottomRightRadio"
+                                    Grid.Row="2"
+                                    Grid.Column="2"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Bottom"
+                                    AutomationProperties.Name="Bottom right"
+                                    Checked="AnchorPoint_Checked"
+                                    GroupName="AnchorPoint"
+                                    Style="{StaticResource AnchorDot}"
+                                    ToolTip="Bottom right" />
+                            </Grid>
+                        </Border>
+
+                        <!--  Leader: type + length (length also sets the offset when the leader is off)  -->
+                        <TextBlock
+                            Grid.Row="2"
+                            Style="{StaticResource Type.Label}"
+                            Text="Leader" />
+                        <Grid
+                            Grid.Row="2"
+                            Grid.Column="1"
+                            Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="96" />
+                            </Grid.ColumnDefinitions>
+                            <ComboBox
+                                x:Name="LeaderTypeComboBox"
+                                Margin="0,0,8,0"
+                                AutomationProperties.Name="Leader end"
+                                DisplayMemberPath="Name"
+                                ItemsSource="{Binding LeaderTypes}"
+                                Style="{StaticResource Input.Combo}" />
+                            <Grid Grid.Column="1" ToolTip="Leader length. Also used as the tag offset when the leader is off.">
+                                <TextBox
+                                    x:Name="LeaderLengthTextBox"
+                                    AutomationProperties.Name="Leader length in millimetres"
+                                    Style="{StaticResource Input.Number}"
+                                    Tag="Length"
+                                    Text="0" />
+                                <TextBlock Style="{StaticResource Type.Unit}" Text="mm" />
+                            </Grid>
+                        </Grid>
+                        <CheckBox
+                            x:Name="LeaderLineCheckBox"
+                            Grid.Row="3"
+                            Grid.Column="1"
+                            Margin="0,0,0,10"
+                            Checked="LeaderLineCheckBox_Toggled"
+                            Content="Leader line"
                             IsChecked="True"
-                            Style="{StaticResource CustomCheckboxStyle}">
-                            <CheckBox.LayoutTransform>
-                                <ScaleTransform ScaleX="0.85" ScaleY="0.85" />
-                            </CheckBox.LayoutTransform>
-                        </CheckBox>
-                        <Button
-                            x:Name="ActiveSelectionToggleButton"
-                            Width="110"
-                            Height="32"
-                            Margin="0,0,8,0"
-                            VerticalAlignment="Center"
-                            Click="ActiveSelectionToggle_Click"
-                            Content="Select"
-                            FontSize="12"
-                            FontWeight="Bold"
-                            Style="{StaticResource CustomActionButtonStyle}" />
-                        <Button
-                            Width="110"
-                            Height="32"
-                            Margin="0,0,8,0"
-                            VerticalAlignment="Center"
-                            Click="TagAllButton_Click"
-                            Content="Tag All"
-                            FontSize="12"
-                            FontWeight="Bold"
-                            Style="{StaticResource CustomActionButtonStyle}" />
-                        <Button
-                            Width="110"
-                            Height="32"
-                            Margin="0,0,8,0"
-                            VerticalAlignment="Center"
-                            Click="TagSelectedButton_Click"
-                            Content="Tag Selected"
-                            FontSize="12"
-                            FontWeight="Bold"
-                            Style="{StaticResource CustomActionButtonStyle}" />
-                    </StackPanel>
-                </Grid>
-            </Grid>
+                            Style="{StaticResource Input.Check}"
+                            Unchecked="LeaderLineCheckBox_Toggled" />
+
+                        <!--  Orientation: type + angle  -->
+                        <TextBlock
+                            Grid.Row="4"
+                            Style="{StaticResource Type.Label}"
+                            Text="Orientation" />
+                        <Grid
+                            Grid.Row="4"
+                            Grid.Column="1"
+                            Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="96" />
+                            </Grid.ColumnDefinitions>
+                            <ComboBox
+                                x:Name="OrientationComboBox"
+                                Margin="0,0,8,0"
+                                AutomationProperties.Name="Orientation"
+                                DisplayMemberPath="Name"
+                                ItemsSource="{Binding OrientationOptions}"
+                                Style="{StaticResource Input.Combo}" />
+                            <Grid Grid.Column="1">
+                                <TextBox
+                                    x:Name="AngleTextBox"
+                                    AutomationProperties.Name="Angle in degrees"
+                                    Style="{StaticResource Input.Number}"
+                                    Tag="Angle"
+                                    Text="0" />
+                                <TextBlock Style="{StaticResource Type.Unit}" Text="°" />
+                            </Grid>
+                        </Grid>
+                        <CheckBox
+                            x:Name="DetectRotationCheckBox"
+                            Grid.Row="5"
+                            Grid.Column="1"
+                            Margin="0,0,0,8"
+                            Content="Detect element rotation"
+                            IsChecked="False"
+                            Style="{StaticResource Input.Check}" />
+                    </Grid>
+                </Expander>
+
+                <!--  Collision avoidance  -->
+                <Expander
+                    x:Name="CollisionDetectionExpander"
+                    AutomationProperties.Name="Collision avoidance"
+                    Collapsed="CardExpander_Toggled"
+                    Expanded="CardExpander_Toggled"
+                    Style="{StaticResource Section}">
+                    <Expander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="VectorSquare" Style="{StaticResource SectionIcon}" />
+                            <TextBlock Text="Collision avoidance" />
+                        </StackPanel>
+                    </Expander.Header>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="{StaticResource Form.LabelWidth}" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Style="{StaticResource Type.Label}" Text="Avoid collisions" />
+                        <CheckBox
+                            x:Name="CollisionDetectionCheckBox"
+                            Grid.Column="1"
+                            Height="{StaticResource Size.Control}"
+                            Margin="0,0,0,8"
+                            AutomationProperties.Name="Avoid collisions"
+                            Checked="CollisionDetectionCheckBox_Toggled"
+                            IsChecked="False"
+                            Style="{StaticResource Input.Switch}"
+                            ToolTip="Move tags clear of elements and other tags"
+                            Unchecked="CollisionDetectionCheckBox_Toggled" />
+
+                        <TextBlock
+                            Grid.Row="1"
+                            Style="{StaticResource Type.Label}"
+                            Text="Gap" />
+                        <Grid
+                            Grid.Row="1"
+                            Grid.Column="1"
+                            Width="120"
+                            Margin="0,0,0,8"
+                            HorizontalAlignment="Left">
+                            <TextBox
+                                x:Name="CollisionGapTextBox"
+                                AutomationProperties.Name="Gap in millimetres"
+                                IsEnabled="False"
+                                Style="{StaticResource Input.Number}"
+                                Tag="Gap"
+                                Text="1" />
+                            <TextBlock Style="{StaticResource Type.Unit}" Text="mm" />
+                        </Grid>
+
+                        <TextBlock
+                            Grid.Row="2"
+                            Style="{StaticResource Type.Label}"
+                            Text="Minimum offset" />
+                        <Grid
+                            Grid.Row="2"
+                            Grid.Column="1"
+                            Width="120"
+                            Margin="0,0,0,8"
+                            HorizontalAlignment="Left"
+                            ToolTip="Distance from the element when the tag has no leader">
+                            <TextBox
+                                x:Name="MinimumOffsetTextBox"
+                                AutomationProperties.Name="Minimum offset in millimetres"
+                                Style="{StaticResource Input.Number}"
+                                Tag="Offset"
+                                Text="300" />
+                            <TextBlock Style="{StaticResource Type.Unit}" Text="mm" />
+                        </Grid>
+                    </Grid>
+                </Expander>
+
+                <!--  Retag / normalize  -->
+                <Expander
+                    x:Name="RetagNormalizeExpander"
+                    AutomationProperties.Name="Retag and normalize"
+                    Collapsed="CardExpander_Toggled"
+                    Expanded="CardExpander_Toggled"
+                    Style="{StaticResource Section}">
+                    <Expander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="Autorenew" Style="{StaticResource SectionIcon}" />
+                            <TextBlock Text="Retag / normalize" />
+                        </StackPanel>
+                    </Expander.Header>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="{StaticResource Form.LabelWidth}" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <!--  Execution mode (exclusive in code)  -->
+                        <TextBlock Style="{StaticResource Type.Label}" Text="Apply changes" />
+                        <Border
+                            Grid.Column="1"
+                            Margin="0,0,0,8"
+                            AutomationProperties.Name="Execution mode"
+                            Style="{StaticResource Segmented}">
+                            <UniformGrid Rows="1">
+                                <CheckBox
+                                    x:Name="RetagFullyAutomaticCheckBox"
+                                    Checked="RetagExecutionMode_Changed"
+                                    Content="Automatically"
+                                    IsChecked="True"
+                                    Style="{StaticResource Segment}"
+                                    ToolTip="Apply every change without asking" />
+                                <CheckBox
+                                    x:Name="RetagUserConfirmationCheckBox"
+                                    Checked="RetagExecutionMode_Changed"
+                                    Content="Confirm each"
+                                    IsChecked="False"
+                                    Style="{StaticResource Segment}"
+                                    ToolTip="Review each change before it is applied" />
+                            </UniformGrid>
+                        </Border>
+
+                        <UniformGrid
+                            Grid.Row="1"
+                            Grid.Column="1"
+                            Margin="0,0,0,8"
+                            Columns="2">
+                            <Button
+                                Margin="0,0,4,0"
+                                Click="RetagSelectedButton_Click"
+                                Content="Retag selected"
+                                Style="{StaticResource Button.Secondary}"
+                                ToolTip="Re-place the selected tags with the current settings" />
+                            <Button
+                                Margin="4,0,0,0"
+                                Click="NormalizeViewButton_Click"
+                                Content="Normalize view"
+                                Style="{StaticResource Button.Secondary}"
+                                ToolTip="Re-place every tag in the active view with the current settings" />
+                        </UniformGrid>
+                    </Grid>
+                </Expander>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!--  ============ Feedback line: result of the last action (glyph + text) ============  -->
+        <DockPanel
+            x:Name="StatusLine"
+            Grid.Row="3"
+            Margin="18,2,18,8"
+            AutomationProperties.LiveSetting="Polite"
+            AutomationProperties.Name="Status"
+            Visibility="Collapsed">
+            <materialDesign:PackIcon
+                Width="15"
+                Height="15"
+                Margin="0,0,8,0"
+                VerticalAlignment="Center"
+                Foreground="{DynamicResource Status.Ok}"
+                Kind="CheckCircleOutline" />
+            <TextBlock
+                x:Name="StatusText"
+                VerticalAlignment="Center"
+                Foreground="{DynamicResource Text.Secondary}"
+                TextTrimming="CharacterEllipsis"
+                ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
+        </DockPanel>
+
+        <!--  ============ Action bar (toolbar material) ============  -->
+        <Border
+            Grid.Row="4"
+            Padding="16,10,16,12"
+            Background="{DynamicResource Toolbar.Material}"
+            BorderBrush="{DynamicResource Separator}"
+            BorderThickness="0,1,0,0">
+            <DockPanel>
+                <CheckBox
+                    x:Name="SkipIfTaggedCheckBox"
+                    Content="Skip tagged"
+                    IsChecked="True"
+                    Style="{StaticResource Input.Check}"
+                    ToolTip="Leave out elements that already have a tag in this view" />
+                <StackPanel
+                    HorizontalAlignment="Right"
+                    DockPanel.Dock="Right"
+                    Orientation="Horizontal">
+                    <Button
+                        x:Name="ActiveSelectionToggleButton"
+                        MinWidth="72"
+                        Margin="0,0,8,0"
+                        Click="ActiveSelectionToggle_Click"
+                        Content="Select"
+                        Style="{StaticResource Button.Selection}"
+                        ToolTip="Tag elements one by one as you click them in the view. Press Esc twice to stop." />
+                    <Button
+                        MinWidth="72"
+                        Margin="0,0,8,0"
+                        Click="TagAllButton_Click"
+                        Content="Tag all"
+                        Style="{StaticResource Button.Secondary}"
+                        ToolTip="Tag every element of the category in the active view" />
+                    <Button
+                        MinWidth="96"
+                        Click="TagSelectedButton_Click"
+                        Content="Tag selected"
+                        Style="{StaticResource Button.Primary}"
+                        ToolTip="Tag the elements selected in the view" />
+                </StackPanel>
+            </DockPanel>
         </Border>
+
+        <!--  ============ Sheet (in-window, replaces modal message boxes and dialogs) ============  -->
+        <Grid
+            x:Name="SheetHost"
+            Grid.RowSpan="5"
+            Visibility="Collapsed">
+            <Border Background="{DynamicResource Scrim}" MouseLeftButtonDown="Scrim_MouseDown" />
+            <Border
+                x:Name="SheetCard"
+                Margin="16,48,16,16"
+                Padding="20,18,20,16"
+                VerticalAlignment="Top"
+                KeyboardNavigation.ControlTabNavigation="Cycle"
+                KeyboardNavigation.DirectionalNavigation="Contained"
+                KeyboardNavigation.TabNavigation="Cycle"
+                Style="{StaticResource Floating}">
+                <DockPanel>
+                    <!--  Secondary left of primary; primary is the default (Enter), secondary cancels (Esc)  -->
+                    <StackPanel
+                        Margin="0,16,0,0"
+                        HorizontalAlignment="Right"
+                        DockPanel.Dock="Bottom"
+                        Orientation="Horizontal">
+                        <Button
+                            x:Name="SheetSecondary"
+                            MinWidth="80"
+                            Margin="0,0,8,0"
+                            Click="SheetSecondary_Click"
+                            Content="Cancel"
+                            Style="{StaticResource Button.Secondary}" />
+                        <Button
+                            x:Name="SheetPrimary"
+                            MinWidth="80"
+                            Click="SheetPrimary_Click"
+                            Content="OK"
+                            Style="{StaticResource Button.Primary}" />
+                    </StackPanel>
+
+                    <materialDesign:PackIcon
+                        x:Name="SheetIcon"
+                        Width="22"
+                        Height="22"
+                        Margin="0,0,12,0"
+                        VerticalAlignment="Top"
+                        Kind="InformationOutline" />
+
+                    <StackPanel>
+                        <TextBlock
+                            x:Name="SheetTitle"
+                            Margin="0,1,0,6"
+                            Style="{StaticResource Type.Section}"
+                            TextWrapping="Wrap" />
+                        <ScrollViewer
+                            MaxHeight="320"
+                            Focusable="False"
+                            HorizontalScrollBarVisibility="Disabled"
+                            VerticalScrollBarVisibility="Auto">
+                            <TextBlock x:Name="SheetMessage" Style="{StaticResource Type.Body}" />
+                        </ScrollViewer>
+                        <TextBox
+                            x:Name="SheetInput"
+                            Margin="0,12,0,0"
+                            Style="{StaticResource Input.Text}"
+                            TextChanged="SheetInput_TextChanged"
+                            Visibility="Collapsed" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+        </Grid>
     </Grid>
 </Window>

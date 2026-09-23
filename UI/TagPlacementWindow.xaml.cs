@@ -70,9 +70,8 @@ namespace SmartTags.UI
         private bool _isLoadingPreset;
         private bool _isInitializing;
 
-        // Status message notification
-        private string _originalTitle = "Smart Tags";
-        private DispatcherTimer _titleRestoreTimer;
+        // Status message notification (feedback line)
+        private DispatcherTimer _statusTimer;
 
         public ObservableCollection<TagCategoryOption> TagCategories { get; } = new ObservableCollection<TagCategoryOption>();
         public ObservableCollection<TagTypeOption> TagTypes { get; } = new ObservableCollection<TagTypeOption>();
@@ -91,7 +90,10 @@ namespace SmartTags.UI
             InitializeComponent();
 
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            // The window sizes to its content; long content scrolls instead of growing past the screen.
+            MaxHeight = SystemParameters.WorkArea.Height - 24;
             Closed += TagPlacementWindow_Closed;
+            PreviewKeyDown += OnSheetPreviewKeyDown;
 
             DataContext = this;
 
@@ -154,7 +156,7 @@ namespace SmartTags.UI
                         _isInitializing = false;
                     }
                     
-                    Opacity = 1; 
+                    Motion.Play(RootGrid, 0);
                 }), System.Windows.Threading.DispatcherPriority.ContextIdle);
             };
         }
@@ -541,7 +543,7 @@ namespace SmartTags.UI
                 if (selectionIds == null || selectionIds.Count == 0)
                 {
                     var elementTypeName = IsWireCategory(categoryOption) ? "wires" : "detail lines";
-                    MessageBox.Show("Select " + elementTypeName + " in the view before using this button.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                    ShowNotice("Select " + elementTypeName + " in the view before using this button.");
                     return;
                 }
 
@@ -557,7 +559,7 @@ namespace SmartTags.UI
                 if (filteredIds.Count == 0)
                 {
                     var elementTypeName = isWireMode ? "wires" : "detail lines";
-                    MessageBox.Show("No selected elements are " + elementTypeName + ".", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                    ShowNotice("No selected elements are " + elementTypeName + ".");
                     return;
                 }
 
@@ -579,7 +581,7 @@ namespace SmartTags.UI
         {
             if (_uiApplication?.ActiveUIDocument == null)
             {
-                MessageBox.Show("Open a document before placing tags.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowNotice("Open a document before placing tags.");
                 return false;
             }
 
@@ -589,20 +591,20 @@ namespace SmartTags.UI
             var categoryOption = CategoryComboBox?.SelectedItem as TagCategoryOption;
             if (categoryOption == null)
             {
-                MessageBox.Show("Select a category to tag.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowNotice("Select a category to tag.");
                 return false;
             }
 
             if (categoryOption.ElementCategoryId == ElementId.InvalidElementId)
             {
-                MessageBox.Show("No matching element category found for this tag.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowNotice("No matching element category found for this tag.");
                 return false;
             }
 
             var tagTypeOption = TagTypeComboBox?.SelectedItem as TagTypeOption;
             if (tagTypeOption == null)
             {
-                MessageBox.Show("Select a tag type.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowNotice("Select a tag type.");
                 return false;
             }
 
@@ -614,14 +616,14 @@ namespace SmartTags.UI
             // Always parse leader length even if leader is disabled - we still use it for placement offset
             if (!TryParseLength(LeaderLengthTextBox?.Text, out leaderLength, out var lengthError))
             {
-                MessageBox.Show(lengthError, "SmartTags", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ShowNotice(lengthError, NoticeKind.Warning);
                 return false;
             }
 
             double angleRadians;
             if (!TryParseAngle(AngleTextBox?.Text, out angleRadians, out var angleError))
             {
-                MessageBox.Show(angleError, "SmartTags", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ShowNotice(angleError, NoticeKind.Warning);
                 return false;
             }
 
@@ -653,7 +655,7 @@ namespace SmartTags.UI
             {
                 if (!TryParseCollisionGap(CollisionGapTextBox?.Text, out var gapMm, out var gapError))
                 {
-                    MessageBox.Show(gapError, "SmartTags", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    ShowNotice(gapError, NoticeKind.Warning);
                     return false;
                 }
                 _tagPlacementHandler.CollisionGapMillimeters = gapMm;
@@ -662,7 +664,7 @@ namespace SmartTags.UI
             // Configure minimum offset (when leader is disabled)
             if (!TryParseLength(MinimumOffsetTextBox?.Text, out var minimumOffsetMm, out var offsetError))
             {
-                MessageBox.Show(offsetError, "SmartTags", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ShowNotice(offsetError, NoticeKind.Warning);
                 return false;
             }
             _tagPlacementHandler.MinimumOffsetMillimeters = minimumOffsetMm;
@@ -672,7 +674,7 @@ namespace SmartTags.UI
                 var selectionIds = uiDoc.Selection.GetElementIds();
                 if (selectionIds == null || selectionIds.Count == 0)
                 {
-                    MessageBox.Show("Select elements in the active view to tag.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                    ShowNotice("Select elements in the active view to tag.");
                     return false;
                 }
 
@@ -693,7 +695,7 @@ namespace SmartTags.UI
 
                 if (filteredIds.Count == 0)
                 {
-                    MessageBox.Show("No selected elements match the chosen category.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                    ShowNotice("No selected elements match the chosen category.");
                     return false;
                 }
 
@@ -897,10 +899,6 @@ namespace SmartTags.UI
 #endif
         }
 
-        private void TitleBar_Loaded(object sender, RoutedEventArgs e)
-        {
-        }
-
         private void LoadTheme()
         {
             try
@@ -911,35 +909,54 @@ namespace SmartTags.UI
 
                 var newDict = new ResourceDictionary { Source = themeUri };
 
+                // Remove the palette applied before, plus the default palette merged from XAML at parse time.
                 if (_currentThemeDictionary != null)
                 {
                     Resources.MergedDictionaries.Remove(_currentThemeDictionary);
                 }
+                foreach (var palette in Resources.MergedDictionaries.Where(IsPaletteDictionary).ToList())
+                {
+                    Resources.MergedDictionaries.Remove(palette);
+                }
 
-                Resources.MergedDictionaries.Add(newDict);
+                Resources.MergedDictionaries.Insert(0, newDict);
                 _currentThemeDictionary = newDict;
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error loading theme: {ex.Message}");
+                ShowNotice($"Error loading theme: {ex.Message}", NoticeKind.Error);
             }
+
+            UpdateThemeButton();
+        }
+
+        private static bool IsPaletteDictionary(ResourceDictionary dictionary)
+        {
+            var source = dictionary.Source?.OriginalString;
+            return source != null && (source.EndsWith("/DarkTheme.xaml") || source.EndsWith("/LightTheme.xaml"));
+        }
+
+        private void UpdateThemeButton()
+        {
+            if (ThemeIcon == null)
+            {
+                return;
+            }
+
+            ThemeIcon.Kind = _isDarkMode ? PackIconKind.WeatherNight : PackIconKind.WhiteBalanceSunny;
+            ThemeButton.ToolTip = _isDarkMode ? "Dark appearance (switch to light)" : "Light appearance (switch to dark)";
         }
 
         private void ToggleTheme_Click(object sender, RoutedEventArgs e)
         {
-            _isDarkMode = ThemeToggleButton.IsChecked == true;
+            _isDarkMode = !_isDarkMode;
             LoadTheme();
             SaveThemeState();
-
-            var icon = ThemeToggleButton?.Template?.FindName("ThemeToggleIcon", ThemeToggleButton)
-                       as PackIcon;
-            if (icon != null)
-            {
-                icon.Kind = _isDarkMode
-                    ? PackIconKind.ToggleSwitchOffOutline
-                    : PackIconKind.ToggleSwitchOutline;
-            }
         }
+
+        private void Minimize_Click(object sender, RoutedEventArgs e) => SystemCommands.MinimizeWindow(this);
+
+        private void Close_Click(object sender, RoutedEventArgs e) => SystemCommands.CloseWindow(this);
 
         private void LoadThemeState()
         {
@@ -955,19 +972,6 @@ namespace SmartTags.UI
             {
             }
 
-            if (ThemeToggleButton != null)
-            {
-                ThemeToggleButton.IsChecked = _isDarkMode;
-                var icon = ThemeToggleButton.Template?.FindName("ThemeToggleIcon", ThemeToggleButton)
-                           as PackIcon;
-                if (icon != null)
-                {
-                    icon.Kind = _isDarkMode
-                        ? PackIconKind.ToggleSwitchOffOutline
-                        : PackIconKind.ToggleSwitchOutline;
-                }
-            }
-
             LoadTheme();
         }
 
@@ -981,8 +985,7 @@ namespace SmartTags.UI
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Failed to save settings: {ex.Message}", "Save Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                ShowNotice($"Failed to save settings: {ex.Message}", NoticeKind.Error);
             }
         }
 
@@ -996,11 +999,11 @@ namespace SmartTags.UI
             SaveRetagExecutionMode();
             SaveCardStates();
             SaveWindowPosition();
-            _titleRestoreTimer?.Stop();
+            _statusTimer?.Stop();
         }
 
         /// <summary>
-        /// Display a temporary status message in the title bar for 5 seconds
+        /// Display a temporary status message in the feedback line above the action bar for 5 seconds
         /// </summary>
         public void ShowStatusMessage(string message)
         {
@@ -1012,24 +1015,164 @@ namespace SmartTags.UI
             Dispatcher.Invoke(() =>
             {
                 // Stop any existing timer
-                _titleRestoreTimer?.Stop();
+                _statusTimer?.Stop();
 
-                // Update title with status message
-                Title = message;
+                StatusText.Text = message;
+                StatusLine.Visibility = System.Windows.Visibility.Visible;
+                Motion.Play(StatusLine, 4);
 
-                // Create and start timer to restore original title after 5 seconds
-                _titleRestoreTimer = new DispatcherTimer
+                // Hide the feedback line again after 5 seconds
+                _statusTimer = new DispatcherTimer
                 {
                     Interval = TimeSpan.FromSeconds(5)
                 };
-                _titleRestoreTimer.Tick += (s, e) =>
+                _statusTimer.Tick += (s, e) =>
                 {
-                    Title = _originalTitle;
-                    _titleRestoreTimer.Stop();
+                    StatusLine.Visibility = System.Windows.Visibility.Collapsed;
+                    _statusTimer.Stop();
                 };
-                _titleRestoreTimer.Start();
+                _statusTimer.Start();
             });
         }
+
+        // ------------------------------------------------------------------ sheet
+
+        private enum NoticeKind
+        {
+            Info,
+            Warning,
+            Error
+        }
+
+        private Action<bool, string> _sheetClosed;
+        private IInputElement _focusBeforeSheet;
+
+        /// <summary>
+        /// Shows a message in the in-window sheet (replaces MessageBox). Safe to call from any thread.
+        /// </summary>
+        private void ShowNotice(string message, NoticeKind kind = NoticeKind.Info, string title = null)
+        {
+            ShowSheet(title, message, kind, "OK", null, null, null);
+        }
+
+        /// <summary>
+        /// Shows the sheet over the window content. With <paramref name="secondaryText"/> it asks a question
+        /// (Esc = secondary); with <paramref name="inputPlaceholder"/> it also collects a line of text, and the
+        /// primary button stays disabled until the text is not empty.
+        /// </summary>
+        private void ShowSheet(string title, string message, NoticeKind kind, string primaryText, string secondaryText,
+            string inputPlaceholder, Action<bool, string> onClosed)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => ShowSheet(title, message, kind, primaryText, secondaryText, inputPlaceholder, onClosed)));
+                return;
+            }
+
+            if (SheetHost.Visibility != System.Windows.Visibility.Visible)
+            {
+                _focusBeforeSheet = Keyboard.FocusedElement;
+            }
+
+            _sheetClosed = onClosed;
+
+            SheetTitle.Text = title ?? string.Empty;
+            SheetTitle.Visibility = string.IsNullOrEmpty(title) ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+            SheetMessage.Text = message ?? string.Empty;
+            SheetMessage.Visibility = string.IsNullOrEmpty(message) ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+
+            switch (kind)
+            {
+                case NoticeKind.Error:
+                    SheetIcon.Kind = PackIconKind.AlertCircleOutline;
+                    SheetIcon.SetResourceReference(ForegroundProperty, "Status.Error");
+                    break;
+                case NoticeKind.Warning:
+                    SheetIcon.Kind = PackIconKind.AlertOutline;
+                    SheetIcon.SetResourceReference(ForegroundProperty, "Status.Warning");
+                    break;
+                default:
+                    SheetIcon.Kind = secondaryText != null ? PackIconKind.HelpCircleOutline : PackIconKind.InformationOutline;
+                    SheetIcon.SetResourceReference(ForegroundProperty, "Accent.Text");
+                    break;
+            }
+
+            SheetPrimary.Content = primaryText;
+            SheetPrimary.IsEnabled = true;
+            SheetSecondary.Content = secondaryText;
+            SheetSecondary.Visibility = secondaryText != null ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+
+            var hasInput = inputPlaceholder != null;
+            SheetInput.Visibility = hasInput ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+            SheetInput.Tag = inputPlaceholder;
+            SheetInput.Text = string.Empty;
+            SheetPrimary.IsEnabled = !hasInput;
+
+            SheetHost.Visibility = System.Windows.Visibility.Visible;
+            // The sheet drops from the title area (where the window's commands live) and returns there.
+            Motion.Play(SheetCard, -10);
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (hasInput) SheetInput.Focus();
+                else SheetPrimary.Focus();
+            }), DispatcherPriority.Input);
+        }
+
+        private void CloseSheet(bool primary)
+        {
+            if (SheetHost.Visibility != System.Windows.Visibility.Visible)
+            {
+                return;
+            }
+
+            var callback = _sheetClosed;
+            var text = SheetInput.Text?.Trim();
+            _sheetClosed = null;
+            SheetHost.Visibility = System.Windows.Visibility.Collapsed;
+
+            var restore = _focusBeforeSheet as UIElement;
+            _focusBeforeSheet = null;
+            if (restore != null && restore.IsVisible && restore.IsEnabled)
+            {
+                restore.Focus();
+            }
+
+            callback?.Invoke(primary, text);
+        }
+
+        private void OnSheetPreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (SheetHost.Visibility != System.Windows.Visibility.Visible)
+            {
+                return;
+            }
+
+            if (e.Key == Key.Escape)
+            {
+                CloseSheet(false);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Enter && !(Keyboard.FocusedElement is Button))
+            {
+                if (SheetPrimary.IsEnabled) CloseSheet(true);
+                e.Handled = true;
+            }
+        }
+
+        private void SheetPrimary_Click(object sender, RoutedEventArgs e) => CloseSheet(true);
+
+        private void SheetSecondary_Click(object sender, RoutedEventArgs e) => CloseSheet(false);
+
+        private void SheetInput_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (SheetInput.Visibility == System.Windows.Visibility.Visible)
+            {
+                SheetPrimary.IsEnabled = !string.IsNullOrWhiteSpace(SheetInput.Text);
+            }
+        }
+
+        // Clicks on the dimmed content do nothing (the sheet needs an answer); they must not reach the controls.
+        private void Scrim_MouseDown(object sender, MouseButtonEventArgs e) => e.Handled = true;
 
         private void LoadCardStates()
         {
@@ -1591,7 +1734,7 @@ namespace SmartTags.UI
         {
             if (_uiApplication?.ActiveUIDocument == null)
             {
-                MessageBox.Show("Open a document before retagging.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowNotice("Open a document before retagging.");
                 return;
             }
 
@@ -1601,7 +1744,7 @@ namespace SmartTags.UI
 
             if (view == null)
             {
-                MessageBox.Show("No active view.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowNotice("No active view.");
                 return;
             }
 
@@ -1616,7 +1759,7 @@ namespace SmartTags.UI
 
             if (!TryParseAngle(AngleTextBox?.Text, out var angleRadians, out var angleError))
             {
-                MessageBox.Show(angleError, "SmartTags", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ShowNotice(angleError, NoticeKind.Warning);
                 return;
             }
             adjustmentService.Angle = angleRadians;
@@ -1624,7 +1767,7 @@ namespace SmartTags.UI
             // Always parse and apply leader length for placement offset, regardless of HasLeader state
             if (!TryParseLength(LeaderLengthTextBox?.Text, out var leaderLength, out var lengthError))
             {
-                MessageBox.Show(lengthError, "SmartTags", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ShowNotice(lengthError, NoticeKind.Warning);
                 return;
             }
 
@@ -1637,7 +1780,7 @@ namespace SmartTags.UI
             {
                 if (!TryParseCollisionGap(CollisionGapTextBox?.Text, out var gapMm, out var gapError))
                 {
-                    MessageBox.Show(gapError, "SmartTags", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    ShowNotice(gapError, NoticeKind.Warning);
                     return;
                 }
                 adjustmentService.CollisionGapMillimeters = gapMm;
@@ -1645,7 +1788,7 @@ namespace SmartTags.UI
 
             if (!TryParseLength(MinimumOffsetTextBox?.Text, out var minimumOffsetMm, out var offsetError))
             {
-                MessageBox.Show(offsetError, "SmartTags", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ShowNotice(offsetError, NoticeKind.Warning);
                 return;
             }
             adjustmentService.MinimumOffsetMillimeters = minimumOffsetMm;
@@ -1655,7 +1798,7 @@ namespace SmartTags.UI
                 var selectionIds = uiDoc.Selection.GetElementIds();
                 if (selectionIds == null || selectionIds.Count == 0)
                 {
-                    MessageBox.Show("Select elements in the active view to retag.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                    ShowNotice("Select elements in the active view to retag.");
                     return;
                 }
 
@@ -1884,7 +2027,7 @@ namespace SmartTags.UI
         {
             if (_uiApplication?.ActiveUIDocument == null)
             {
-                MessageBox.Show("Open a document before using Active Selection.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowNotice("Open a document before using Active Selection.");
                 return false;
             }
 
@@ -1894,20 +2037,20 @@ namespace SmartTags.UI
             var categoryOption = CategoryComboBox?.SelectedItem as TagCategoryOption;
             if (categoryOption == null)
             {
-                MessageBox.Show("Select a category to tag.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowNotice("Select a category to tag.");
                 return false;
             }
 
             if (categoryOption.ElementCategoryId == ElementId.InvalidElementId)
             {
-                MessageBox.Show("No matching element category found for this tag.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowNotice("No matching element category found for this tag.");
                 return false;
             }
 
             var tagTypeOption = TagTypeComboBox?.SelectedItem as TagTypeOption;
             if (tagTypeOption == null)
             {
-                MessageBox.Show("Select a tag type.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowNotice("Select a tag type.");
                 return false;
             }
 
@@ -2092,7 +2235,7 @@ namespace SmartTags.UI
         {
             if (_uiApplication?.ActiveUIDocument == null)
             {
-                MessageBox.Show("Open a document before checking direction tag types.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowNotice("Open a document before checking direction tag types.");
                 return;
             }
 
@@ -2100,7 +2243,7 @@ namespace SmartTags.UI
             var categoryOption = CategoryComboBox?.SelectedItem as TagCategoryOption;
             if (categoryOption == null || categoryOption.TagCategoryId == ElementId.InvalidElementId)
             {
-                MessageBox.Show("Select a tag category first.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowNotice("Select a tag category first.");
                 return;
             }
 
@@ -2113,13 +2256,13 @@ namespace SmartTags.UI
 
             if (!checkResult.Success)
             {
-                MessageBox.Show(checkResult.ErrorMessage, "SmartTags", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ShowNotice(checkResult.ErrorMessage, NoticeKind.Warning);
                 return;
             }
 
             PopulateDirectionTagTypes(categoryOption.TagCategoryId, checkResult);
 
-            MessageBox.Show(checkResult.GetSummary(), "Direction Check Results", MessageBoxButton.OK, MessageBoxImage.Information);
+            ShowNotice(checkResult.GetSummary(), NoticeKind.Info, "Direction check");
         }
 
         private void PopulateDirectionTagTypes(ElementId tagCategoryId, Services.DirectionCheckResult checkResult)
@@ -2371,13 +2514,14 @@ namespace SmartTags.UI
 
         private void AddPresetButton_Click(object sender, RoutedEventArgs e)
         {
-            var dialog = new PresetNameDialog();
-            dialog.Owner = this;
-            
-            if (dialog.ShowDialog() == true)
-            {
-                SavePreset(dialog.PresetName);
-            }
+            ShowSheet("Save preset", "Saves the current settings under a name you can pick from the Preset list.",
+                NoticeKind.Info, "Save", "Cancel", "Preset name", (save, name) =>
+                {
+                    if (save && !string.IsNullOrEmpty(name))
+                    {
+                        SavePreset(name);
+                    }
+                });
         }
 
         private void PresetComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -2586,7 +2730,7 @@ namespace SmartTags.UI
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Failed to load preset: {ex.Message}", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Error);
+                ShowNotice($"Failed to load preset: {ex.Message}", NoticeKind.Error);
             }
             finally
             {
@@ -2674,14 +2818,14 @@ namespace SmartTags.UI
         {
             if (_uiApplication?.ActiveUIDocument == null)
             {
-                MessageBox.Show("Open a document before annotating detail lines.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowNotice("Open a document before annotating detail lines.");
                 return false;
             }
 
             var detailTypeOption = TagTypeComboBox?.SelectedItem as TagTypeOption;
             if (detailTypeOption == null)
             {
-                MessageBox.Show("Select a detail item type to place.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowNotice("Select a detail item type to place.");
                 return false;
             }
 
@@ -2953,11 +3097,11 @@ namespace SmartTags.UI
                 // Select the saved preset
                 PresetComboBox.SelectedItem = presetName;
                 
-                MessageBox.Show($"Preset '{presetName}' saved successfully.", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowStatusMessage($"Preset '{presetName}' saved.");
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Failed to save preset: {ex.Message}", "SmartTags", MessageBoxButton.OK, MessageBoxImage.Error);
+                ShowNotice($"Failed to save preset: {ex.Message}", NoticeKind.Error);
             }
         }
     }
