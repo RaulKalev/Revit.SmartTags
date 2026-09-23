@@ -2524,6 +2524,208 @@ namespace SmartTags.UI
                 });
         }
 
+        private const string PresetFileFilter = "SmartTags preset (*.json)|*.json|All files (*.*)|*.*";
+        private const string PresetFileFormat = "SmartTagsPreset";
+
+        private void DeletePresetButton_Click(object sender, RoutedEventArgs e)
+        {
+            var presetName = PresetComboBox?.SelectedItem as string;
+            if (string.IsNullOrWhiteSpace(presetName))
+            {
+                return;
+            }
+
+            ShowSheet("Delete preset?", $"'{presetName}' is removed from the Preset list. The current settings stay as they are.",
+                NoticeKind.Warning, "Delete", "Cancel", null, (delete, _) =>
+                {
+                    if (delete)
+                    {
+                        DeletePreset(presetName);
+                    }
+                });
+        }
+
+        private void DeletePreset(string presetName)
+        {
+            try
+            {
+                var config = LoadConfig();
+                if (config.TryGetValue("Presets", out var value) && value is JObject presets)
+                {
+                    presets.Remove(presetName);
+                    config["Presets"] = presets;
+                }
+
+                if (TryGetString(config, SelectedPresetKey, out var selectedPreset) && selectedPreset == presetName)
+                {
+                    config.Remove(SelectedPresetKey);
+                }
+
+                SaveConfig(config);
+                Presets.Remove(presetName);
+                ShowStatusMessage($"Preset '{presetName}' deleted.");
+            }
+            catch (Exception ex)
+            {
+                ShowNotice($"Failed to delete preset: {ex.Message}", NoticeKind.Error);
+            }
+        }
+
+        private void ExportPresetButton_Click(object sender, RoutedEventArgs e)
+        {
+            var presetName = PresetComboBox?.SelectedItem as string;
+            if (string.IsNullOrWhiteSpace(presetName))
+            {
+                return;
+            }
+
+            var dialog = new Microsoft.Win32.SaveFileDialog
+            {
+                Title = "Export preset",
+                Filter = PresetFileFilter,
+                DefaultExt = ".json",
+                FileName = ToSafeFileName(presetName)
+            };
+            if (dialog.ShowDialog(this) != true)
+            {
+                return;
+            }
+
+            try
+            {
+                var config = LoadConfig();
+                var presets = config.TryGetValue("Presets", out var value) ? value as JObject : null;
+                var settings = presets?[presetName] as JObject;
+                if (settings == null)
+                {
+                    ShowNotice($"Preset '{presetName}' was not found in the settings file.", NoticeKind.Warning);
+                    return;
+                }
+
+                var file = new JObject
+                {
+                    ["Format"] = PresetFileFormat,
+                    ["Version"] = 1,
+                    ["Name"] = presetName,
+                    ["Settings"] = settings
+                };
+                File.WriteAllText(dialog.FileName, file.ToString(Formatting.Indented));
+                ShowStatusMessage($"Preset '{presetName}' exported.");
+            }
+            catch (Exception ex)
+            {
+                ShowNotice($"Failed to export preset: {ex.Message}", NoticeKind.Error);
+            }
+        }
+
+        private void LoadPresetButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "Load preset",
+                Filter = PresetFileFilter,
+                CheckFileExists = true
+            };
+            if (dialog.ShowDialog(this) != true)
+            {
+                return;
+            }
+
+            string presetName;
+            JObject settings;
+            try
+            {
+                var file = JObject.Parse(File.ReadAllText(dialog.FileName));
+                if ((string)file["Format"] == PresetFileFormat)
+                {
+                    presetName = (string)file["Name"];
+                    settings = file["Settings"] as JObject;
+                }
+                else
+                {
+                    // A bare settings object (e.g. copied out of config.json): name it after the file.
+                    presetName = null;
+                    settings = file;
+                }
+
+                if (string.IsNullOrWhiteSpace(presetName))
+                {
+                    presetName = Path.GetFileNameWithoutExtension(dialog.FileName);
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowNotice($"The file could not be read as a preset: {ex.Message}", NoticeKind.Error);
+                return;
+            }
+
+            if (settings == null || !settings.HasValues)
+            {
+                ShowNotice("The file does not contain any preset settings.", NoticeKind.Warning);
+                return;
+            }
+
+            presetName = presetName.Trim();
+            if (Presets.Contains(presetName))
+            {
+                ShowSheet("Replace preset?", $"A preset named '{presetName}' already exists. Replace it with the one from the file?",
+                    NoticeKind.Warning, "Replace", "Cancel", null, (replace, _) =>
+                    {
+                        if (replace)
+                        {
+                            ImportPreset(presetName, settings);
+                        }
+                    });
+                return;
+            }
+
+            ImportPreset(presetName, settings);
+        }
+
+        private void ImportPreset(string presetName, JObject settings)
+        {
+            try
+            {
+                var config = LoadConfig();
+                var presets = config.TryGetValue("Presets", out var value) ? value as JObject : null;
+                presets = presets ?? new JObject();
+                presets[presetName] = settings;
+                config["Presets"] = presets;
+                SaveConfig(config);
+
+                if (!Presets.Contains(presetName))
+                {
+                    Presets.Add(presetName);
+                }
+
+                // Selecting it applies the settings (and reloads them when an existing preset was replaced).
+                if (Equals(PresetComboBox.SelectedItem, presetName))
+                {
+                    LoadPreset(presetName);
+                }
+                else
+                {
+                    PresetComboBox.SelectedItem = presetName;
+                }
+
+                ShowStatusMessage($"Preset '{presetName}' loaded.");
+            }
+            catch (Exception ex)
+            {
+                ShowNotice($"Failed to load preset: {ex.Message}", NoticeKind.Error);
+            }
+        }
+
+        private static string ToSafeFileName(string name)
+        {
+            foreach (var invalid in Path.GetInvalidFileNameChars())
+            {
+                name = name.Replace(invalid, '_');
+            }
+
+            return name;
+        }
+
         private void PresetComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             var presetName = PresetComboBox?.SelectedItem as string;

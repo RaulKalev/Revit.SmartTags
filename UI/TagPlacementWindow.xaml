@@ -32,6 +32,18 @@
                 <ResourceDictionary Source="pack://application:,,,/SmartTags;component/UI/Themes/DarkTheme.xaml" />
                 <ResourceDictionary Source="pack://application:,,,/SmartTags;component/UI/Themes/SmartTagsStyles.xaml" />
             </ResourceDictionary.MergedDictionaries>
+
+            <!--  Preset actions that need a chosen preset (delete, export)  -->
+            <Style
+                x:Key="Button.PresetAction"
+                BasedOn="{StaticResource Button.Icon}"
+                TargetType="{x:Type Button}">
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding SelectedItem, ElementName=PresetComboBox}" Value="{x:Null}">
+                        <Setter Property="IsEnabled" Value="False" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
         </ResourceDictionary>
     </Window.Resources>
 
@@ -154,26 +166,29 @@
                 </Button>
                 <Button
                     AutomationProperties.Name="Delete preset"
-                    Style="{StaticResource Button.Icon}"
-                    ToolTip="Delete preset">
+                    Click="DeletePresetButton_Click"
+                    Style="{StaticResource Button.PresetAction}"
+                    ToolTip="Delete the selected preset">
                     <materialDesign:PackIcon
                         Width="16"
                         Height="16"
                         Kind="Minus" />
                 </Button>
                 <Button
-                    AutomationProperties.Name="Load preset"
+                    AutomationProperties.Name="Load preset from file"
+                    Click="LoadPresetButton_Click"
                     Style="{StaticResource Button.Icon}"
-                    ToolTip="Load preset">
+                    ToolTip="Load a preset from a file">
                     <materialDesign:PackIcon
                         Width="16"
                         Height="16"
                         Kind="FolderOpenOutline" />
                 </Button>
                 <Button
-                    AutomationProperties.Name="Export preset"
-                    Style="{StaticResource Button.Icon}"
-                    ToolTip="Export preset">
+                    AutomationProperties.Name="Export preset to file"
+                    Click="ExportPresetButton_Click"
+                    Style="{StaticResource Button.PresetAction}"
+                    ToolTip="Export the selected preset to a file">
                     <materialDesign:PackIcon
                         Width="16"
                         Height="16"

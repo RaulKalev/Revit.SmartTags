@@ -11,6 +11,7 @@ SmartTags is a Revit add-in that replaces the default tag placement workflow wit
 - **Anchor Point Selection**: Choose from 9 anchor positions (corners, edges, center) for precise tag placement
 - **Leader Controls**: Configure leader usage, length (with mm suffix), type (Attached/Free end)
 - **Orientation & Rotation**: Set tag orientation and rotation angle (with ° suffix), with optional element rotation detection
+- **Presets**: Save the current settings under a name (`+`), delete the selected preset (`−`, asks first), export it to a JSON file, or load a preset from a JSON file (a preset with the same name can be replaced). Delete and export are available once a preset is selected
 - **User Preferences**: Persistent settings including window position, theme, card expansion states, and all placement parameters
 - **Batch Operations**: Tag all elements or selected elements with the same settings
 - **Collision Detection**: Intelligent collision avoidance system with spatial indexing:
